@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TimeCap</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="canvas-container"></div>
+  <div id="prompt-overlay" class="hidden">
+    <!-- Step 1: Prompt + text entry -->
+    <div id="step-prompt" class="step">
+      <p class="prompt-text">What do you believe to be true right now that you're not entirely sure of?</p>
+      <textarea id="response-input" rows="4" placeholder=""></textarea>
+      <button id="continue-btn" class="continue-btn hidden">Continue</button>
+    </div>
+
+    <!-- Step 2: Interval picker -->
+    <div id="step-interval" class="step hidden">
+      <p class="step-label">When should this return to you?</p>
+      <div class="interval-buttons">
+        <button data-seconds="5" data-label="5 seconds">5 seconds</button>
+        <button data-seconds="604800" data-label="1 week">1 week</button>
+        <button data-seconds="2592000" data-label="1 month">1 month</button>
+        <button data-seconds="31536000" data-label="1 year">1 year</button>
+      </div>
+    </div>
+
+    <!-- Step 3: Delivery form -->
+    <div id="step-delivery" class="step hidden">
+      <p class="step-label">Where should we send it?</p>
+      <div class="method-toggle">
+        <button data-method="email" class="active">Email</button>
+        <button data-method="sms">Text message</button>
+      </div>
+      <input type="email" id="contact-input" placeholder="your@email.com" autocomplete="email" />
+      <button id="seal-btn">Seal this belief</button>
+      <p id="seal-error" class="error-text hidden"></p>
+    </div>
+
+    <!-- Step 4: Confirmation -->
+    <div id="step-confirm" class="step hidden">
+      <p class="confirm-text"></p>
+      <button class="again-btn">Seal another</button>
+    </div>
+
+    <!-- 5-second reveal -->
+    <div id="step-reveal" class="step hidden">
+      <p class="reveal-label">You believed:</p>
+      <p class="reveal-text"></p>
+      <button class="again-btn">Seal another</button>
+    </div>
+  </div>
+
+  <!-- Due capsule notification (shown on page load if any are ready) -->
+  <div id="due-overlay" class="hidden">
+    <div id="due-capsules"></div>
+    <button id="due-dismiss">Continue</button>
+  </div>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+  <script type="module" src="main.js"></script>
+</body>
+</html>
