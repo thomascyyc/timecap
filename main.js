@@ -1,5 +1,11 @@
 import * as THREE from 'three';
 import { ConvexGeometry } from 'three/addons/geometries/ConvexGeometry.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
 
 // ── State ───────────────────────────────────────────────────────
 
@@ -15,6 +21,16 @@ let pointerDownPos = null;
 const clock = new THREE.Clock();
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
+
+// Step 4: Smoothed pointer for parallax + aurora
+const pointerSmooth = new THREE.Vector2(0, 0);
+
+// Step 7: Fracture effect state
+let fractureFlashTime = -1;
+let fractureParticles = null;
+
+// Step 5: Aurora mesh
+let auroraMesh = null;
 
 // ── Questions ───────────────────────────────────────────────────
 
@@ -87,17 +103,35 @@ const crystalPoints = [
 
 crystalGeometry = new ConvexGeometry(crystalPoints);
 crystalGeometry = crystalGeometry.toNonIndexed();
+// Step 2: Required for reflection/refraction varyings
+crystalGeometry.computeVertexNormals();
 
-// ── Crystal Shader ──────────────────────────────────────────────
+// ── Crystal Shader (Step 2: upgraded with refraction, iridescence, caustics) ──
 
 const vertexShader = /* glsl */ `
   varying vec3 vWorldPosition;
   varying vec3 vViewDirection;
+  varying vec3 vNormal;
+  varying vec3 vReflect;
+  varying vec3 vRefract;
+  varying float vFresnel;
 
   void main() {
     vec4 worldPos = modelMatrix * vec4(position, 1.0);
     vWorldPosition = worldPos.xyz;
+    vNormal = normalize(normalMatrix * normal);
     vViewDirection = normalize(cameraPosition - worldPos.xyz);
+
+    // Reflection and refraction vectors
+    vec3 I = -vViewDirection;
+    vReflect = reflect(I, vNormal);
+    vRefract = refract(I, vNormal, 1.0 / 1.31); // IOR 1.31 for ice
+
+    // Schlick Fresnel approximation
+    float cosTheta = max(dot(vViewDirection, vNormal), 0.0);
+    float r0 = pow((1.0 - 1.31) / (1.0 + 1.31), 2.0);
+    vFresnel = r0 + (1.0 - r0) * pow(1.0 - cosTheta, 5.0);
+
     gl_Position = projectionMatrix * viewMatrix * worldPos;
   }
 `;
@@ -106,15 +140,29 @@ const fragmentShader = /* glsl */ `
   uniform float uTime;
   uniform float uHover;
   uniform float uOpacity;
+  uniform sampler2D uEnvMap;
+  uniform float uEnvIntensity;
 
   varying vec3 vWorldPosition;
   varying vec3 vViewDirection;
+  varying vec3 vNormal;
+  varying vec3 vReflect;
+  varying vec3 vRefract;
+  varying float vFresnel;
+
+  // Equirectangular sampling for HDRI
+  vec3 sampleEnv(vec3 dir) {
+    float phi = atan(dir.z, dir.x);
+    float theta = asin(clamp(dir.y, -1.0, 1.0));
+    vec2 uv = vec2(phi / 6.2832 + 0.5, theta / 3.1416 + 0.5);
+    return texture2D(uEnvMap, uv).rgb;
+  }
 
   void main() {
     // Flat face normal from screen-space derivatives
     vec3 faceNormal = normalize(cross(dFdx(vWorldPosition), dFdy(vWorldPosition)));
 
-    // Fresnel rim glow
+    // Fresnel rim glow (original)
     float fresnel = 1.0 - max(dot(vViewDirection, faceNormal), 0.0);
     fresnel = pow(fresnel, 2.5);
 
@@ -144,10 +192,48 @@ const fragmentShader = /* glsl */ `
       faceColor = mix(gold, iceBlue, (colorShift - 0.66) * 3.0);
     }
 
+    // ── Step 2: Thin-film iridescence ──
+    float iriAngle = max(dot(vViewDirection, vNormal), 0.0);
+    float filmThickness = 1.8 + 0.5 * sin(uTime * 0.4 + faceFactor * 3.0);
+    vec3 iridescence = vec3(
+      0.5 + 0.5 * cos(filmThickness * 6.28 * iriAngle + 0.0),
+      0.5 + 0.5 * cos(filmThickness * 6.28 * iriAngle + 2.094),
+      0.5 + 0.5 * cos(filmThickness * 6.28 * iriAngle + 4.189)
+    );
+    // Iridescence strongest at glancing angles
+    float iriStrength = pow(1.0 - iriAngle, 3.0) * 0.4;
+
+    // ── Step 2: Internal caustics ──
+    vec3 wp = vWorldPosition * 3.0 + uTime * 0.15;
+    float caustic = sin(wp.x * 2.1 + sin(wp.z * 1.7 + uTime * 0.3)) *
+                    sin(wp.y * 1.9 + sin(wp.x * 2.3 + uTime * 0.2)) *
+                    sin(wp.z * 2.5 + sin(wp.y * 1.5 + uTime * 0.4));
+    caustic = pow(max(caustic, 0.0), 1.5) * 0.35;
+    vec3 causticColor = vec3(0.5, 0.7, 1.0) * caustic;
+
+    // ── Step 2: Refraction tint ──
+    vec3 refractTint = vec3(
+      0.9 + vRefract.x * 0.1,
+      0.95 + vRefract.y * 0.05,
+      1.0 + vRefract.z * 0.1
+    ) * 0.15;
+
+    // ── Step 3: Environment reflection sampling ──
+    vec3 envColor = vec3(0.0);
+    if (uEnvIntensity > 0.0) {
+      envColor = sampleEnv(vReflect) * uEnvIntensity;
+    }
+
     // Combine: inner glow at face centers, color at edges, Fresnel rim
     float depth = 1.0 - fresnel;
     vec3 color = mix(faceColor * 0.4, innerGlow, depth * 0.6);
     color += fresnel * vec3(0.4, 0.5, 1.0) * (0.8 + uHover * 0.4);
+
+    // Layer new effects
+    color += iridescence * iriStrength;
+    color += causticColor * depth;
+    color += refractTint;
+    color += envColor * vFresnel * 0.5;
 
     // Semi-transparent with stronger edges
     float alpha = 0.65 + fresnel * 0.35;
@@ -164,6 +250,8 @@ crystalMaterial = new THREE.ShaderMaterial({
     uTime: { value: 0 },
     uHover: { value: 0 },
     uOpacity: { value: 1.0 },
+    uEnvMap: { value: null },
+    uEnvIntensity: { value: 0.0 },
   },
   transparent: true,
   side: THREE.DoubleSide,
@@ -229,6 +317,201 @@ glowMesh = new THREE.Mesh(crystalGeometry, glowMaterial);
 glowMesh.scale.setScalar(1.15);
 scene.add(glowMesh);
 
+// ── Step 5: Aurora Hover Effect ─────────────────────────────────
+
+const auroraVertexShader = /* glsl */ `
+  varying vec2 vUv;
+  void main() {
+    vUv = uv;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`;
+
+const auroraFragmentShader = /* glsl */ `
+  uniform float uTime;
+  uniform float uHover;
+  uniform vec2 uPointer;
+
+  varying vec2 vUv;
+
+  vec3 hsvToRgb(float h, float s, float v) {
+    vec3 c = vec3(h, s, v);
+    vec3 rgb = clamp(abs(mod(c.x * 6.0 + vec3(0.0, 4.0, 2.0), 6.0) - 3.0) - 1.0, 0.0, 1.0);
+    return c.z * mix(vec3(1.0), rgb, c.y);
+  }
+
+  void main() {
+    vec2 center = vec2(0.5) + uPointer * 0.15;
+    float dist = distance(vUv, center);
+
+    // Ring shape
+    float ring = smoothstep(0.45, 0.3, dist) * smoothstep(0.05, 0.2, dist);
+
+    // Hue cycling through icy blue-green palette (hue 0.5-0.7)
+    float hue = 0.5 + 0.1 * sin(uTime * 0.4 + dist * 5.0) + 0.05 * sin(uTime * 0.7);
+
+    // Flicker
+    float flicker = 0.7 + 0.3 * sin(uTime * 3.7 + dist * 8.0) * sin(uTime * 2.1);
+
+    vec3 color = hsvToRgb(hue, 0.6, 1.0);
+
+    float alpha = ring * uHover * flicker * 0.35;
+
+    gl_FragColor = vec4(color, alpha);
+  }
+`;
+
+const auroraGeo = new THREE.PlaneGeometry(4, 4);
+const auroraMat = new THREE.ShaderMaterial({
+  vertexShader: auroraVertexShader,
+  fragmentShader: auroraFragmentShader,
+  uniforms: {
+    uTime: { value: 0 },
+    uHover: { value: 0 },
+    uPointer: { value: new THREE.Vector2(0, 0) },
+  },
+  transparent: true,
+  depthWrite: false,
+  blending: THREE.AdditiveBlending,
+  side: THREE.DoubleSide,
+});
+
+auroraMesh = new THREE.Mesh(auroraGeo, auroraMat);
+auroraMesh.position.z = -0.5;
+scene.add(auroraMesh);
+
+// ── Step 1: Post-Processing Pipeline ────────────────────────────
+
+const composer = new EffectComposer(renderer);
+
+// Render pass
+const renderPass = new RenderPass(scene, camera);
+composer.addPass(renderPass);
+
+// Bloom pass
+const bloomPass = new UnrealBloomPass(
+  new THREE.Vector2(window.innerWidth, window.innerHeight),
+  0.8,   // strength
+  0.4,   // radius
+  0.25   // threshold
+);
+composer.addPass(bloomPass);
+
+// Chromatic Aberration shader
+const ChromaticAberrationShader = {
+  uniforms: {
+    tDiffuse: { value: null },
+    uIntensity: { value: 1.0 },
+    uTime: { value: 0.0 },
+  },
+  vertexShader: /* glsl */ `
+    varying vec2 vUv;
+    void main() {
+      vUv = uv;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `,
+  fragmentShader: /* glsl */ `
+    uniform sampler2D tDiffuse;
+    uniform float uIntensity;
+    uniform float uTime;
+    varying vec2 vUv;
+
+    void main() {
+      vec2 center = vec2(0.5);
+      vec2 dir = vUv - center;
+      float dist = length(dir);
+
+      // Radial offset stronger at screen edges + subtle temporal wobble
+      float wobble = 1.0 + 0.15 * sin(uTime * 1.7) * sin(uTime * 0.9);
+      float offset = dist * 0.006 * uIntensity * wobble;
+
+      vec2 rUv = vUv + dir * offset;
+      vec2 gUv = vUv;
+      vec2 bUv = vUv - dir * offset;
+
+      float r = texture2D(tDiffuse, rUv).r;
+      float g = texture2D(tDiffuse, gUv).g;
+      float b = texture2D(tDiffuse, bUv).b;
+
+      gl_FragColor = vec4(r, g, b, 1.0);
+    }
+  `,
+};
+
+const caPass = new ShaderPass(ChromaticAberrationShader);
+composer.addPass(caPass);
+
+// Step 6: Frost / Grain overlay shader
+const FrostGrainShader = {
+  uniforms: {
+    tDiffuse: { value: null },
+    uTime: { value: 0.0 },
+  },
+  vertexShader: /* glsl */ `
+    varying vec2 vUv;
+    void main() {
+      vUv = uv;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `,
+  fragmentShader: /* glsl */ `
+    uniform sampler2D tDiffuse;
+    uniform float uTime;
+    varying vec2 vUv;
+
+    // Hash noise
+    float hash(vec2 p) {
+      vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+      p3 += dot(p3, p3.yzx + 33.33);
+      return fract((p3.x + p3.y) * p3.z);
+    }
+
+    void main() {
+      vec4 color = texture2D(tDiffuse, vUv);
+
+      // Film grain
+      float grain = hash(vUv * 500.0 + uTime * 100.0) - 0.5;
+      color.rgb += grain * 0.06;
+
+      // Frost vignette with noisy edges
+      vec2 center = vUv - 0.5;
+      float dist = length(center);
+      float frostNoise = hash(vUv * 8.0 + uTime * 0.5) * 0.15;
+      float vignette = smoothstep(0.4, 0.9, dist + frostNoise);
+
+      // Blue-tinted darkening at corners
+      vec3 frostTint = vec3(0.7, 0.8, 1.0);
+      color.rgb = mix(color.rgb, color.rgb * frostTint * 0.3, vignette);
+
+      // Subtle desaturation at frost edges
+      float luma = dot(color.rgb, vec3(0.299, 0.587, 0.114));
+      color.rgb = mix(color.rgb, vec3(luma), vignette * 0.4);
+
+      gl_FragColor = color;
+    }
+  `,
+};
+
+const frostGrainPass = new ShaderPass(FrostGrainShader);
+composer.addPass(frostGrainPass);
+
+// Output pass (tone mapping + color space)
+const outputPass = new OutputPass();
+composer.addPass(outputPass);
+
+// ── Step 3: HDRI Environment Loading ────────────────────────────
+
+const envLoader = new RGBELoader();
+envLoader.load(
+  'https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/studio_small_09_1k.hdr',
+  (texture) => {
+    texture.mapping = THREE.EquirectangularReflectionMapping;
+    crystalMaterial.uniforms.uEnvMap.value = texture;
+    crystalMaterial.uniforms.uEnvIntensity.value = 0.6;
+  }
+);
+
 // ── Animation ───────────────────────────────────────────────────
 
 function updateRotation(time) {
@@ -247,6 +530,7 @@ function updateHover() {
   hoverCurrent += (hoverTarget - hoverCurrent) * 0.05;
   crystalMaterial.uniforms.uHover.value = hoverCurrent;
   glowMaterial.uniforms.uHover.value = hoverCurrent;
+  auroraMat.uniforms.uHover.value = hoverCurrent;
 }
 
 // ── Fracture System ─────────────────────────────────────────────
@@ -254,6 +538,7 @@ function updateHover() {
 function fractureCrystal() {
   crystal.visible = false;
   glowMesh.visible = false;
+  auroraMesh.visible = false;
 
   const positions = crystalGeometry.attributes.position.array;
   const faceCount = positions.length / 9;
@@ -287,6 +572,8 @@ function fractureCrystal() {
         uTime: { value: crystalMaterial.uniforms.uTime.value },
         uHover: { value: 0 },
         uOpacity: { value: 1.0 },
+        uEnvMap: { value: crystalMaterial.uniforms.uEnvMap.value },
+        uEnvIntensity: { value: crystalMaterial.uniforms.uEnvIntensity.value },
       },
       transparent: true,
       side: THREE.DoubleSide,
@@ -327,6 +614,113 @@ function fractureCrystal() {
 
   fractureStartTime = clock.getElapsedTime();
   fractured = true;
+
+  // Step 7: Spike CA and bloom
+  fractureFlashTime = fractureStartTime;
+
+  // Step 7: Spawn particle burst
+  spawnFractureParticles();
+}
+
+// ── Step 7: Fracture Particle Burst ─────────────────────────────
+
+function spawnFractureParticles() {
+  const count = 80;
+  const positions = new Float32Array(count * 3);
+  const velocities = [];
+  const sizes = new Float32Array(count);
+
+  for (let i = 0; i < count; i++) {
+    positions[i * 3] = 0;
+    positions[i * 3 + 1] = 0;
+    positions[i * 3 + 2] = 0;
+
+    const dir = new THREE.Vector3(
+      Math.random() - 0.5,
+      Math.random() - 0.5,
+      Math.random() - 0.5
+    ).normalize();
+    const speed = 1.5 + Math.random() * 2.0;
+    velocities.push(dir.multiplyScalar(speed));
+
+    sizes[i] = 0.02 + Math.random() * 0.04;
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+
+  const material = new THREE.ShaderMaterial({
+    uniforms: {
+      uTime: { value: 0.0 },
+      uStartTime: { value: clock.getElapsedTime() },
+    },
+    vertexShader: /* glsl */ `
+      attribute float size;
+      uniform float uTime;
+      uniform float uStartTime;
+      varying float vAlpha;
+
+      void main() {
+        float elapsed = uTime - uStartTime;
+        vAlpha = max(0.0, 1.0 - elapsed / 2.5);
+        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+        gl_PointSize = size * 300.0 * vAlpha / -mvPosition.z;
+        gl_Position = projectionMatrix * mvPosition;
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      varying float vAlpha;
+
+      void main() {
+        // Soft circle
+        float d = length(gl_PointCoord - vec2(0.5));
+        if (d > 0.5) discard;
+        float soft = 1.0 - smoothstep(0.2, 0.5, d);
+
+        // Icy white-blue
+        vec3 color = vec3(0.7, 0.85, 1.0);
+        gl_FragColor = vec4(color, soft * vAlpha);
+      }
+    `,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+
+  const points = new THREE.Points(geometry, material);
+  scene.add(points);
+
+  fractureParticles = { mesh: points, velocities, startTime: clock.getElapsedTime() };
+}
+
+function updateFractureParticles(time) {
+  if (!fractureParticles) return;
+
+  const elapsed = time - fractureParticles.startTime;
+  if (elapsed > 2.5) {
+    // Dispose particles
+    scene.remove(fractureParticles.mesh);
+    fractureParticles.mesh.geometry.dispose();
+    fractureParticles.mesh.material.dispose();
+    fractureParticles = null;
+    return;
+  }
+
+  const positions = fractureParticles.mesh.geometry.attributes.position.array;
+  const dt = 0.016;
+  // Exponential slowdown
+  const slowdown = Math.exp(-elapsed * 2.0);
+
+  for (let i = 0; i < fractureParticles.velocities.length; i++) {
+    const vel = fractureParticles.velocities[i];
+    positions[i * 3] += vel.x * dt * slowdown;
+    positions[i * 3 + 1] += vel.y * dt * slowdown;
+    positions[i * 3 + 2] += vel.z * dt * slowdown;
+  }
+
+  fractureParticles.mesh.geometry.attributes.position.needsUpdate = true;
+  fractureParticles.mesh.material.uniforms.uTime.value = time;
 }
 
 function updateFracture(time) {
@@ -361,6 +755,22 @@ function updateFracture(time) {
       burstLight = null;
     }
   }
+
+  // Step 7: Decay CA + bloom flash
+  if (fractureFlashTime >= 0) {
+    const flashElapsed = time - fractureFlashTime;
+    const flashDecay = Math.max(0, 1.0 - flashElapsed / 1.0);
+    caPass.uniforms.uIntensity.value = 1.0 + 5.0 * flashDecay; // 6x at peak → 1x
+    bloomPass.strength = 0.8 + 1.7 * flashDecay; // 2.5 at peak → 0.8
+    if (flashElapsed > 1.0) {
+      fractureFlashTime = -1;
+      caPass.uniforms.uIntensity.value = 1.0;
+      bloomPass.strength = 0.8;
+    }
+  }
+
+  // Update particles
+  updateFractureParticles(time);
 
   // After animation, clean up and show prompt
   if (elapsed > duration + 0.5) {
@@ -768,30 +1178,9 @@ function initCapsuleFlow() {
       const seconds = parseInt(btn.dataset.seconds);
       const label = btn.dataset.label;
 
-      if (seconds === 5) {
-        // 5-second reveal path
-        transitionStep(stepInterval, null);
-        setTimeout(() => {
-          stepReveal.innerHTML = '';
-          stepReveal.classList.remove('hidden');
-          stepReveal.style.opacity = '0';
-          void stepReveal.offsetHeight;
-          stepReveal.style.opacity = '1';
-          runRevealSequence(
-            stepReveal,
-            { answers: [...answers], id: 'quick' },
-            () => {
-              stepReveal.classList.add('hidden');
-              stepReveal.innerHTML = '';
-              resetCreationFlow();
-            }
-          );
-        }, 5000);
-      } else {
-        stepDelivery.dataset.seconds = seconds;
-        stepDelivery.dataset.label = label;
-        transitionStep(stepInterval, stepDelivery);
-      }
+      stepDelivery.dataset.seconds = seconds;
+      stepDelivery.dataset.label = label;
+      transitionStep(stepInterval, stepDelivery);
     });
   });
 
@@ -919,6 +1308,7 @@ function onResize() {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
+  composer.setSize(window.innerWidth, window.innerHeight);
 }
 
 window.addEventListener('pointermove', onPointerMove);
@@ -935,17 +1325,41 @@ function animate() {
   requestAnimationFrame(animate);
   const time = clock.getElapsedTime();
 
+  // Step 4: Smooth pointer lerp
+  pointerSmooth.x += (pointer.x - pointerSmooth.x) * 0.03;
+  pointerSmooth.y += (pointer.y - pointerSmooth.y) * 0.03;
+
   if (!fractured) {
     updateRotation(time);
     updatePulse(time);
     updateHover();
     crystalMaterial.uniforms.uTime.value = time;
     glowMaterial.uniforms.uTime.value = time;
-  } else if (fracturePieces.length > 0) {
-    updateFracture(time);
+
+    // Step 4: Camera parallax
+    camera.position.x = pointerSmooth.x * 0.15;
+    camera.position.y = pointerSmooth.y * 0.1;
+    camera.lookAt(0, 0, 0);
+
+    // Step 5: Update aurora
+    auroraMat.uniforms.uTime.value = time;
+    auroraMat.uniforms.uPointer.value.set(pointerSmooth.x, pointerSmooth.y);
+  } else {
+    // Lerp camera back to center during fracture
+    camera.position.x += (0 - camera.position.x) * 0.03;
+    camera.position.y += (0 - camera.position.y) * 0.03;
+    camera.lookAt(0, 0, 0);
+
+    if (fracturePieces.length > 0) {
+      updateFracture(time);
+    }
   }
 
-  renderer.render(scene, camera);
+  // Update post-processing time uniforms
+  caPass.uniforms.uTime.value = time;
+  frostGrainPass.uniforms.uTime.value = time;
+
+  composer.render();
 }
 
 animate();
