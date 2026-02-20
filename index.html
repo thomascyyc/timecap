@@ -7,6 +7,10 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
+  <nav class="top-nav">
+    <a href="/dashboard.html" class="nav-link">Dashboard</a>
+  </nav>
+
   <div id="canvas-container"></div>
 
   <div id="prompt-overlay" class="hidden">
@@ -24,21 +28,21 @@
     <div id="step-interval" class="step hidden">
       <p class="step-label">When should this return to you?</p>
       <div class="interval-buttons">
-        <button data-seconds="5" data-label="5 seconds">5 seconds</button>
+        <button data-seconds="86400" data-label="1 day">1 day</button>
+        <button data-seconds="259200" data-label="3 days">3 days</button>
         <button data-seconds="604800" data-label="1 week">1 week</button>
+        <button data-seconds="1209600" data-label="2 weeks">2 weeks</button>
         <button data-seconds="2592000" data-label="1 month">1 month</button>
+        <button data-seconds="7776000" data-label="3 months">3 months</button>
+        <button data-seconds="15552000" data-label="6 months">6 months</button>
         <button data-seconds="31536000" data-label="1 year">1 year</button>
       </div>
     </div>
 
-    <!-- Delivery form -->
+    <!-- Notification method selector (replaces delivery contact form) -->
     <div id="step-delivery" class="step hidden">
-      <p class="step-label">Where should we send it?</p>
-      <div class="method-toggle">
-        <button data-method="email" class="active">Email</button>
-        <button data-method="sms">Text message</button>
-      </div>
-      <input type="email" id="contact-input" placeholder="your@email.com" autocomplete="email" />
+      <p class="step-label">How should we notify you?</p>
+      <div id="notify-channels" class="notify-channels"></div>
       <button id="seal-btn">Seal these thoughts</button>
       <p id="seal-error" class="error-text hidden"></p>
     </div>
@@ -57,6 +61,23 @@
   <div id="due-overlay" class="hidden">
     <div id="due-flow"></div>
   </div>
+
+  <script type="module">
+    // Auth gate: redirect to login if not authenticated
+    try {
+      const res = await fetch('/api/auth/me');
+      if (res.ok) {
+        window.__timecapUser = await res.json();
+      } else {
+        window.location.href = '/login.html';
+      }
+    } catch {
+      // Allow offline/local dev — don't block if API unreachable
+      if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+        window.location.href = '/login.html';
+      }
+    }
+  </script>
 
   <script type="importmap">
   {

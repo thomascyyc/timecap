@@ -501,3 +501,60 @@ body {
 #pending-badge:hover {
   color: #c8b89a;
 }
+
+/* ── Top navigation ──────────────────────────────────────── */
+
+.top-nav {
+  position: fixed;
+  top: 1.25rem;
+  right: 1.5rem;
+  z-index: 25;
+  display: flex;
+  gap: 1.25rem;
+  align-items: center;
+}
+
+.nav-link {
+  color: #504030;
+  font-family: 'Georgia', serif;
+  font-size: 0.75rem;
+  letter-spacing: 0.05em;
+  text-decoration: none;
+  transition: color 0.3s;
+}
+
+.nav-link:hover {
+  color: #c8b89a;
+}
+
+/* ── Notification channel toggles ────────────────────────── */
+
+.notify-channels {
+  display: flex;
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.notify-channel {
+  background: transparent;
+  border: 1px solid rgba(200, 184, 154, 0.2);
+  color: #706050;
+  font-family: 'Georgia', serif;
+  font-size: 0.9rem;
+  padding: 0.6rem 1.5rem;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.notify-channel.active {
+  border-color: rgba(200, 184, 154, 0.4);
+  color: #c8b89a;
+  background: rgba(200, 184, 154, 0.08);
+}
+
+.notify-channel:hover {
+  border-color: rgba(200, 184, 154, 0.4);
+  color: #c8b89a;
+}

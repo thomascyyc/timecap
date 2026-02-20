@@ -1,5 +1,6 @@
 import { Redis } from '@upstash/redis';
 import { randomUUID } from 'crypto';
+import { parseUser } from './_lib/auth.js';
 
 const redis = new Redis({
   url: process.env.UPSTASH_REDIS_REST_URL,
@@ -11,7 +12,12 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { answers, deliverAt, method, contact, interval } = req.body;
+  const user = parseUser(req);
+  if (!user) {
+    return res.status(401).json({ error: 'Not authenticated' });
+  }
+
+  const { answers, deliverAt, interval } = req.body;
 
   // Validate answers array
   if (!Array.isArray(answers) || answers.length === 0 || answers.length > 3) {
@@ -31,44 +37,29 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'Delivery time is required' });
   }
 
-  if (!method || !['email', 'sms'].includes(method)) {
-    return res.status(400).json({ error: 'Method must be "email" or "sms"' });
-  }
-
-  if (!contact || typeof contact !== 'string') {
-    return res.status(400).json({ error: 'Contact info is required' });
-  }
-
-  if (method === 'email' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contact)) {
-    return res.status(400).json({ error: 'Invalid email address' });
-  }
-
-  if (method === 'sms' && !/^\+?[\d\s\-()]{10,}$/.test(contact)) {
-    return res.status(400).json({ error: 'Invalid phone number' });
-  }
-
   if (!interval || typeof interval !== 'string') {
     return res.status(400).json({ error: 'Interval label is required' });
   }
 
   const id = randomUUID();
-  const capsule = {
-    id,
-    answers: answers.map((a) => a.trim()),
-    method,
-    contact,
-    deliverAt,
-    interval,
-    createdAt: Date.now(),
-  };
 
   try {
-    // Add to sorted set (score = deliverAt for range queries)
-    await redis.zadd('capsules', { score: deliverAt, member: JSON.stringify(capsule) });
+    // Store capsule as Redis hash
+    await redis.hset(`capsule:${id}`, {
+      uid: user.uid,
+      answers: JSON.stringify(answers.map((a) => a.trim())),
+      deliverAt: String(deliverAt),
+      interval,
+      createdAt: String(Date.now()),
+      status: 'pending',
+      returnAnswers: '',
+    });
 
-    // Also store individually with TTL (interval + 1 day buffer)
-    const ttlSeconds = Math.ceil((deliverAt - Date.now()) / 1000) + 86400;
-    await redis.set(`capsule:${id}`, JSON.stringify(capsule), { ex: ttlSeconds });
+    // Add to user's capsule set (score = createdAt for ordering)
+    await redis.zadd(`user:${user.uid}:capsules`, { score: Date.now(), member: id });
+
+    // Add to global due set (score = deliverAt for cron queries)
+    await redis.zadd('capsules:due', { score: deliverAt, member: id });
 
     return res.status(200).json({ success: true, id });
   } catch (err) {

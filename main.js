@@ -1059,13 +1059,41 @@ function initCapsuleFlow() {
   const stepDelivery = document.getElementById('step-delivery');
   const stepConfirm = document.getElementById('step-confirm');
   const stepReveal = document.getElementById('step-reveal');
-  const contactInput = document.getElementById('contact-input');
   const sealCapsuleBtn = document.getElementById('seal-btn');
   const sealError = document.getElementById('seal-error');
 
+  // Populate notification channels from user profile
+  const user = window.__timecapUser;
+  const notifyContainer = document.getElementById('notify-channels');
+  if (user && notifyContainer) {
+    const channels = [];
+    if (user.notifyEmail) channels.push({ key: 'email', label: 'Email' });
+    if (user.notifySms) channels.push({ key: 'sms', label: 'Text message' });
+    if (user.notifyPush) channels.push({ key: 'push', label: 'Push' });
+
+    if (channels.length === 0) {
+      notifyContainer.innerHTML = '<p style="color: #706050; font-size: 0.85rem; font-style: italic;">No notification channels enabled. <a href="/dashboard.html" style="color: #c8b89a;">Configure in settings</a></p>';
+    } else {
+      notifyContainer.innerHTML = channels.map((ch) =>
+        `<span class="notify-channel active">${ch.label}</span>`
+      ).join('');
+    }
+  }
+
+  // Add 5s interval only on localhost
+  if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+    const intervalContainer = document.querySelector('.interval-buttons');
+    if (intervalContainer && !intervalContainer.querySelector('[data-seconds="5"]')) {
+      const devBtn = document.createElement('button');
+      devBtn.dataset.seconds = '5';
+      devBtn.dataset.label = '5 seconds';
+      devBtn.textContent = '5 seconds';
+      intervalContainer.prepend(devBtn);
+    }
+  }
+
   let questionIndex = 0;
   let answers = [];
-  let selectedMethod = 'email';
 
   function showCurrentQuestion() {
     questionText.textContent = QUESTIONS[questionIndex];
@@ -1149,16 +1177,9 @@ function initCapsuleFlow() {
     });
     stepReveal.innerHTML = '';
 
-    contactInput.value = '';
     sealCapsuleBtn.disabled = false;
     sealCapsuleBtn.textContent = 'Seal these thoughts';
     sealError.classList.add('hidden');
-    selectedMethod = 'email';
-    document.querySelectorAll('.method-toggle button').forEach((b) => {
-      b.classList.toggle('active', b.dataset.method === 'email');
-    });
-    contactInput.type = 'email';
-    contactInput.placeholder = 'your@email.com';
 
     stepQuestions.classList.remove('hidden');
     stepQuestions.style.opacity = '0';
@@ -1184,44 +1205,9 @@ function initCapsuleFlow() {
     });
   });
 
-  // Method toggle
-  document.querySelectorAll('.method-toggle button').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      document.querySelectorAll('.method-toggle button').forEach((b) => b.classList.remove('active'));
-      btn.classList.add('active');
-      selectedMethod = btn.dataset.method;
-
-      if (selectedMethod === 'email') {
-        contactInput.type = 'email';
-        contactInput.placeholder = 'your@email.com';
-        contactInput.autocomplete = 'email';
-      } else {
-        contactInput.type = 'tel';
-        contactInput.placeholder = '+1 555 123 4567';
-        contactInput.autocomplete = 'tel';
-      }
-    });
-  });
-
-  // Seal capsule
+  // Seal capsule (user-scoped — contact info comes from profile)
   sealCapsuleBtn.addEventListener('click', async () => {
-    const contact = contactInput.value.trim();
     sealError.classList.add('hidden');
-
-    if (!contact) {
-      showError('Please enter your contact info.');
-      return;
-    }
-
-    if (selectedMethod === 'email' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contact)) {
-      showError('Please enter a valid email address.');
-      return;
-    }
-
-    if (selectedMethod === 'sms' && !/^\+?[\d\s\-()]{10,}$/.test(contact)) {
-      showError('Please enter a valid phone number.');
-      return;
-    }
 
     const seconds = parseInt(stepDelivery.dataset.seconds);
     const label = stepDelivery.dataset.label;
@@ -1234,8 +1220,6 @@ function initCapsuleFlow() {
       id: crypto.randomUUID(),
       answers: [...answers],
       deliverAt,
-      method: selectedMethod,
-      contact,
       interval: label,
       createdAt: Date.now(),
     };
@@ -1363,3 +1347,8 @@ function animate() {
 }
 
 animate();
+
+// ── Service Worker Registration ──────────────────────────────
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/sw.js').catch(() => {});
+}

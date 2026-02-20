@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TimeCap — Sign In</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: #050508;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      font-family: 'Georgia', 'Times New Roman', serif;
+      color: #c8b89a;
+      padding: 2rem;
+    }
+
+    .login-container {
+      max-width: 400px;
+      width: 100%;
+      text-align: center;
+    }
+
+    .brand {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.2em;
+      color: #504030;
+      margin-bottom: 3rem;
+    }
+
+    .title {
+      font-size: clamp(1.1rem, 3vw, 1.5rem);
+      font-style: italic;
+      line-height: 1.7;
+      margin-bottom: 2.5rem;
+      color: #c8b89a;
+    }
+
+    .email-input {
+      background: transparent;
+      border: none;
+      border-bottom: 1px solid rgba(200, 184, 154, 0.3);
+      color: #e0d5c5;
+      font-family: 'Georgia', serif;
+      font-size: 1rem;
+      width: 100%;
+      max-width: 320px;
+      padding: 0.75rem 0;
+      outline: none;
+      text-align: center;
+      margin-bottom: 2rem;
+    }
+
+    .email-input::placeholder {
+      color: rgba(200, 184, 154, 0.3);
+    }
+
+    .email-input:focus {
+      border-bottom-color: rgba(200, 184, 154, 0.5);
+    }
+
+    .send-btn {
+      background: transparent;
+      border: 1px solid rgba(200, 184, 154, 0.3);
+      color: #c8b89a;
+      font-family: 'Georgia', serif;
+      font-size: 1rem;
+      padding: 0.7rem 2.5rem;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      letter-spacing: 0.05em;
+    }
+
+    .send-btn:hover {
+      border-color: rgba(200, 184, 154, 0.6);
+      color: #e0d5c5;
+      box-shadow: 0 0 16px rgba(100, 80, 150, 0.25);
+    }
+
+    .send-btn:disabled {
+      opacity: 0.4;
+      cursor: default;
+      box-shadow: none;
+    }
+
+    .status {
+      margin-top: 1.5rem;
+      font-size: 0.9rem;
+      font-style: italic;
+      line-height: 1.6;
+      min-height: 1.5em;
+    }
+
+    .status.error { color: #cc8866; }
+    .status.sent { color: #8a9a7a; }
+    .status.sending { color: #706050; }
+  </style>
+</head>
+<body>
+  <div class="login-container">
+    <p class="brand">TimeCap</p>
+    <p class="title">Enter your email to receive a sign-in link</p>
+    <input type="email" class="email-input" id="email" placeholder="your@email.com" autocomplete="email" />
+    <br>
+    <button class="send-btn" id="send-btn">Send magic link</button>
+    <p class="status" id="status"></p>
+  </div>
+
+  <script type="module">
+    // If already authenticated, redirect to home
+    try {
+      const res = await fetch('/api/auth/me');
+      if (res.ok) {
+        window.location.href = '/';
+      }
+    } catch {}
+
+    const emailInput = document.getElementById('email');
+    const sendBtn = document.getElementById('send-btn');
+    const status = document.getElementById('status');
+
+    sendBtn.addEventListener('click', send);
+    emailInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') send();
+    });
+
+    async function send() {
+      const email = emailInput.value.trim();
+      if (!email) {
+        status.textContent = 'Please enter your email.';
+        status.className = 'status error';
+        return;
+      }
+
+      sendBtn.disabled = true;
+      status.textContent = 'Sending...';
+      status.className = 'status sending';
+
+      try {
+        const res = await fetch('/api/auth/send-magic-link', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email }),
+        });
+
+        if (res.ok) {
+          status.textContent = 'Check your inbox for the sign-in link.';
+          status.className = 'status sent';
+        } else {
+          const data = await res.json();
+          status.textContent = data.error || 'Something went wrong.';
+          status.className = 'status error';
+          sendBtn.disabled = false;
+        }
+      } catch {
+        status.textContent = 'Network error. Please try again.';
+        status.className = 'status error';
+        sendBtn.disabled = false;
+      }
+    }
+  </script>
+</body>
+</html>

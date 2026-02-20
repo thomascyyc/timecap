@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TimeCap — Dashboard</title>
+  <link rel="stylesheet" href="dashboard.css">
+</head>
+<body>
+  <nav class="dash-nav">
+    <a href="/" class="dash-brand">TimeCap</a>
+    <div class="dash-nav-right">
+      <span class="dash-email" id="user-email"></span>
+      <button class="dash-signout" id="signout-btn">Sign out</button>
+    </div>
+  </nav>
+
+  <div class="tab-bar">
+    <button class="tab-btn active" data-tab="pending">Pending</button>
+    <button class="tab-btn" data-tab="returned">Returned</button>
+    <button class="tab-btn" data-tab="settings">Settings</button>
+  </div>
+
+  <div class="tab-content">
+    <!-- Pending tab -->
+    <div class="tab-panel active" id="tab-pending">
+      <div id="pending-list"><p class="loading">Loading...</p></div>
+      <a href="/" class="new-capsule-link">+ Seal new thoughts</a>
+    </div>
+
+    <!-- Returned tab -->
+    <div class="tab-panel" id="tab-returned">
+      <div id="returned-list"><p class="loading">Loading...</p></div>
+    </div>
+
+    <!-- Settings tab -->
+    <div class="tab-panel" id="tab-settings">
+      <div class="settings-section">
+        <p class="settings-label">Notification channels</p>
+
+        <div class="setting-row">
+          <span class="setting-name">Email</span>
+          <label class="toggle">
+            <input type="checkbox" id="toggle-email">
+            <span class="toggle-track"></span>
+          </label>
+        </div>
+
+        <div class="setting-row">
+          <span class="setting-name">Text message</span>
+          <label class="toggle">
+            <input type="checkbox" id="toggle-sms">
+            <span class="toggle-track"></span>
+          </label>
+        </div>
+
+        <div class="phone-row" id="phone-row">
+          <span class="setting-name">Phone</span>
+          <input type="tel" class="phone-input" id="phone-input" placeholder="+1 555 123 4567" autocomplete="tel">
+        </div>
+
+        <div class="setting-row">
+          <span class="setting-name">Push notifications</span>
+          <label class="toggle">
+            <input type="checkbox" id="toggle-push">
+            <span class="toggle-track"></span>
+          </label>
+        </div>
+      </div>
+
+      <button class="save-btn" id="save-btn">Save preferences</button>
+      <p class="save-status" id="save-status"></p>
+    </div>
+  </div>
+
+  <script type="module" src="dashboard.js"></script>
+</body>
+</html>

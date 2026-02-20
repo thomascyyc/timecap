@@ -1,6 +1,7 @@
 import { Redis } from '@upstash/redis';
 import { Resend } from 'resend';
 import twilio from 'twilio';
+import webpush from 'web-push';
 
 const redis = new Redis({
   url: process.env.UPSTASH_REDIS_REST_URL,
@@ -12,6 +13,14 @@ const resend = new Resend(process.env.RESEND_API_KEY);
 const twilioClient = process.env.TWILIO_ACCOUNT_SID
   ? twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN)
   : null;
+
+if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
+  webpush.setVapidDetails(
+    process.env.VAPID_SUBJECT || 'mailto:noreply@timecap.app',
+    process.env.VAPID_PUBLIC_KEY,
+    process.env.VAPID_PRIVATE_KEY,
+  );
+}
 
 const QUESTIONS = [
   'What do you believe to be true right now?',
@@ -25,36 +34,65 @@ export default async function handler(req, res) {
   let errors = 0;
 
   try {
-    // Get all capsules with deliverAt <= now
-    const dueCapsules = await redis.zrangebyscore('capsules', 0, now);
+    // Get all due capsule IDs from the sorted set
+    const dueCapsuleIds = await redis.zrangebyscore('capsules:due', 0, now);
 
-    if (!dueCapsules || dueCapsules.length === 0) {
+    if (!dueCapsuleIds || dueCapsuleIds.length === 0) {
       return res.status(200).json({ delivered: 0, errors: 0, message: 'No capsules due' });
     }
 
-    for (const raw of dueCapsules) {
-      let capsule;
+    for (const capsuleId of dueCapsuleIds) {
       try {
-        capsule = typeof raw === 'string' ? JSON.parse(raw) : raw;
-      } catch {
-        console.error('Failed to parse capsule:', raw);
-        errors++;
-        continue;
-      }
-
-      try {
-        if (capsule.method === 'email') {
-          await sendEmail(capsule);
-        } else if (capsule.method === 'sms') {
-          await sendSMS(capsule);
+        // Get capsule data
+        const capsule = await redis.hgetall(`capsule:${capsuleId}`);
+        if (!capsule) {
+          await redis.zrem('capsules:due', capsuleId);
+          continue;
         }
 
-        // Remove from sorted set and delete individual key
-        await redis.zrem('capsules', typeof raw === 'string' ? raw : JSON.stringify(raw));
-        await redis.del(`capsule:${capsule.id}`);
+        // Get user data for contact info and preferences
+        const userData = await redis.hgetall(`user:${capsule.uid}`);
+        if (!userData) {
+          console.error(`User ${capsule.uid} not found for capsule ${capsuleId}`);
+          errors++;
+          continue;
+        }
+
+        const answers = capsule.answers ? JSON.parse(capsule.answers) : [];
+        const interval = capsule.interval;
+        const capsuleData = { id: capsuleId, answers, interval };
+
+        // Deliver via user's enabled channels
+        if (userData.notifyEmail === 'true' && userData.email) {
+          try {
+            await sendEmail(userData.email, capsuleData);
+          } catch (err) {
+            console.error(`Email delivery failed for capsule ${capsuleId}:`, err);
+          }
+        }
+
+        if (userData.notifySms === 'true' && userData.phone) {
+          try {
+            await sendSMS(userData.phone, capsuleData);
+          } catch (err) {
+            console.error(`SMS delivery failed for capsule ${capsuleId}:`, err);
+          }
+        }
+
+        if (userData.notifyPush === 'true') {
+          try {
+            await sendPush(capsule.uid, capsuleData);
+          } catch (err) {
+            console.error(`Push delivery failed for capsule ${capsuleId}:`, err);
+          }
+        }
+
+        // Update capsule status (don't delete — keep for history)
+        await redis.hset(`capsule:${capsuleId}`, { status: 'delivered' });
+        await redis.zrem('capsules:due', capsuleId);
         delivered++;
       } catch (err) {
-        console.error(`Failed to deliver capsule ${capsule.id}:`, err);
+        console.error(`Failed to deliver capsule ${capsuleId}:`, err);
         errors++;
       }
     }
@@ -66,17 +104,15 @@ export default async function handler(req, res) {
   return res.status(200).json({ delivered, errors });
 }
 
-function formatAnswers(capsule) {
-  // Handle both old (belief) and new (answers) format
-  const answers = capsule.answers || (capsule.belief ? [capsule.belief] : []);
-  return answers.map((a, i) => {
+function formatAnswers(capsuleData) {
+  return capsuleData.answers.map((a, i) => {
     const q = QUESTIONS[i] || `Question ${i + 1}`;
     return { question: q, answer: a };
   });
 }
 
-async function sendEmail(capsule) {
-  const pairs = formatAnswers(capsule);
+async function sendEmail(email, capsuleData) {
+  const pairs = formatAnswers(capsuleData);
 
   const textBody = pairs
     .map((p) => `${p.question}\n"${p.answer}"`)
@@ -94,12 +130,12 @@ async function sendEmail(capsule) {
 
   await resend.emails.send({
     from: 'TimeCap <onboarding@resend.dev>',
-    to: capsule.contact,
-    subject: `Thoughts you sealed ${capsule.interval} ago`,
-    text: `${capsule.interval} ago, you sealed these thoughts:\n\n${textBody}\n\n\u2014TimeCap`,
+    to: email,
+    subject: `Thoughts you sealed ${capsuleData.interval} ago`,
+    text: `${capsuleData.interval} ago, you sealed these thoughts:\n\n${textBody}\n\n\u2014TimeCap`,
     html: `
       <div style="font-family: Georgia, serif; max-width: 480px; margin: 0 auto; padding: 2rem; color: #333;">
-        <p style="color: #888; font-size: 0.9rem; margin-bottom: 1.5rem;">${capsule.interval} ago, you sealed these thoughts:</p>
+        <p style="color: #888; font-size: 0.9rem; margin-bottom: 1.5rem;">${capsuleData.interval} ago, you sealed these thoughts:</p>
         ${htmlBody}
         <p style="color: #999; font-size: 0.85rem; margin-top: 2rem;">\u2014TimeCap</p>
       </div>
@@ -107,22 +143,44 @@ async function sendEmail(capsule) {
   });
 }
 
-async function sendSMS(capsule) {
+async function sendSMS(phone, capsuleData) {
   if (!twilioClient) {
     throw new Error('Twilio not configured');
   }
 
-  const pairs = formatAnswers(capsule);
+  const pairs = formatAnswers(capsuleData);
   const body = pairs
     .map((p) => `"${p.answer}"`)
     .join(' \u2022 ');
 
-  // Normalize phone number — strip spaces, dashes, parens
-  const phone = capsule.contact.replace(/[\s\-()]/g, '');
+  const normalizedPhone = phone.replace(/[\s\-()]/g, '');
 
   await twilioClient.messages.create({
-    body: `TimeCap: ${capsule.interval} ago, you sealed: ${body}`,
+    body: `TimeCap: ${capsuleData.interval} ago, you sealed: ${body}`,
     from: process.env.TWILIO_PHONE_NUMBER,
-    to: phone,
+    to: normalizedPhone,
   });
+}
+
+async function sendPush(uid, capsuleData) {
+  const subscriptions = await redis.lrange(`user:${uid}:push`, 0, -1);
+  if (!subscriptions || subscriptions.length === 0) return;
+
+  const payload = JSON.stringify({
+    title: 'TimeCap',
+    body: `Your thoughts from ${capsuleData.interval} ago have returned.`,
+    capsuleId: capsuleData.id,
+  });
+
+  for (const raw of subscriptions) {
+    const sub = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    try {
+      await webpush.sendNotification(sub, payload);
+    } catch (err) {
+      if (err.statusCode === 410 || err.statusCode === 404) {
+        // Subscription expired — remove it
+        await redis.lrem(`user:${uid}:push`, 1, typeof raw === 'string' ? raw : JSON.stringify(raw));
+      }
+    }
+  }
 }
