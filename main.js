@@ -16,6 +16,20 @@ const clock = new THREE.Clock();
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
 
+// ── Questions ───────────────────────────────────────────────────
+
+const QUESTIONS = [
+  'What do you believe to be true right now?',
+  'What are you most uncertain about?',
+  'What would have to happen for that uncertainty to resolve?',
+];
+
+const REVEAL_LABELS = [
+  'You believed',
+  'You were uncertain about',
+  'For it to resolve, you needed',
+];
+
 // ── Scene Setup ─────────────────────────────────────────────────
 
 const container = document.getElementById('canvas-container');
@@ -371,6 +385,18 @@ function showPrompt() {
   initCapsuleFlow();
 }
 
+// ── Utility ─────────────────────────────────────────────────────
+
+function escapeHtml(str) {
+  const d = document.createElement('div');
+  d.textContent = str;
+  return d.innerHTML;
+}
+
+function scrollIntoView(el) {
+  setTimeout(() => el.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 100);
+}
+
 // ── localStorage Capsule Store ──────────────────────────────────
 
 const STORAGE_KEY = 'timecap_capsules';
@@ -397,43 +423,6 @@ function getDueCapsules() {
   return getStoredCapsules().filter((c) => c.deliverAt <= now);
 }
 
-// ── Due Capsule Check (on page load) ────────────────────────────
-
-function checkDueCapsules() {
-  const due = getDueCapsules();
-  if (due.length === 0) return;
-
-  const overlay = document.getElementById('due-overlay');
-  const container = document.getElementById('due-capsules');
-  const dismissBtn = document.getElementById('due-dismiss');
-
-  container.innerHTML = '';
-  for (const cap of due) {
-    const card = document.createElement('div');
-    card.className = 'due-card';
-    card.innerHTML = `
-      <p class="due-meta">Sealed ${cap.interval} ago</p>
-      <p class="due-belief">&ldquo;${escapeHtml(cap.belief)}&rdquo;</p>
-      <p class="due-contact">${escapeHtml(cap.method)}: ${escapeHtml(cap.contact)}</p>
-    `;
-    container.appendChild(card);
-  }
-
-  overlay.classList.remove('hidden');
-
-  dismissBtn.addEventListener('click', () => {
-    removeCapsules(due.map((c) => c.id));
-    overlay.classList.add('fading');
-    setTimeout(() => overlay.classList.add('hidden'), 1000);
-  });
-}
-
-function escapeHtml(str) {
-  const d = document.createElement('div');
-  d.textContent = str;
-  return d.innerHTML;
-}
-
 function updatePendingBadge() {
   const pending = getStoredCapsules().filter((c) => c.deliverAt > Date.now());
   let badge = document.getElementById('pending-badge');
@@ -449,41 +438,311 @@ function updatePendingBadge() {
   badge.textContent = `${pending.length} sealed`;
 }
 
+// ── Step Transitions ────────────────────────────────────────────
+
+function transitionStep(from, to) {
+  if (from) {
+    from.classList.add('fading');
+    setTimeout(() => {
+      from.classList.add('hidden');
+      from.classList.remove('fading');
+      if (to) {
+        to.classList.remove('hidden');
+        to.style.opacity = '0';
+        void to.offsetHeight;
+        to.style.opacity = '1';
+      }
+    }, 800);
+  } else if (to) {
+    to.classList.remove('hidden');
+    to.style.opacity = '0';
+    void to.offsetHeight;
+    to.style.opacity = '1';
+  }
+}
+
+// ── Reveal Sequence (shared between 5s reveal & due return) ─────
+
+function runRevealSequence(flowContainer, capsuleData, onComplete) {
+  const answers = capsuleData.answers || (capsuleData.belief ? [capsuleData.belief] : []);
+  const labels = answers.length === 1 && capsuleData.belief
+    ? ['You believed']
+    : REVEAL_LABELS.slice(0, answers.length);
+
+  let step = 0;
+
+  function revealNext() {
+    if (step < answers.length) {
+      const entry = document.createElement('div');
+      entry.className = 'reveal-entry';
+      entry.innerHTML = `
+        <p class="reveal-label">${labels[step]}</p>
+        <p class="reveal-text">\u201c${escapeHtml(answers[step])}\u201d</p>
+      `;
+      flowContainer.appendChild(entry);
+      requestAnimationFrame(() => entry.classList.add('visible'));
+      scrollIntoView(entry);
+      step++;
+      setTimeout(revealNext, 2500);
+    } else {
+      // All answers revealed — ask "What actually happened?"
+      setTimeout(() => {
+        showReturnPrompt(flowContainer, 'What actually happened?', (response) => {
+          // Seal the response visually
+          const sealed = document.createElement('div');
+          sealed.className = 'sealed-entry';
+          sealed.innerHTML = `
+            <p class="sealed-q">What actually happened</p>
+            <p class="sealed-a">\u201c${escapeHtml(response)}\u201d</p>
+          `;
+          flowContainer.appendChild(sealed);
+          requestAnimationFrame(() => sealed.classList.add('visible'));
+
+          // Store as seed for next cycle
+          try {
+            localStorage.setItem('timecap_seed', JSON.stringify({
+              text: response,
+              capsuleId: capsuleData.id,
+              timestamp: Date.now(),
+            }));
+          } catch {}
+
+          // Brief pause, then final prompt
+          setTimeout(() => {
+            showReturnPrompt(flowContainer, 'What did this surface that you weren\u2019t expecting?', (finalResponse) => {
+              // Clear and show closing confirmation
+              flowContainer.innerHTML = '';
+              const closing = document.createElement('div');
+              closing.className = 'closing-confirmation';
+              closing.innerHTML = `<p class="closing-text">\u201c${escapeHtml(finalResponse)}\u201d</p>`;
+              flowContainer.appendChild(closing);
+              requestAnimationFrame(() => closing.classList.add('visible'));
+
+              if (onComplete) {
+                const btn = document.createElement('button');
+                btn.className = 'again-btn';
+                btn.textContent = 'Begin again';
+                btn.style.opacity = '0';
+                flowContainer.appendChild(btn);
+                setTimeout(() => { btn.style.opacity = '1'; }, 800);
+                btn.addEventListener('click', onComplete);
+              }
+            });
+          }, 1500);
+        });
+      }, 1000);
+    }
+  }
+
+  revealNext();
+}
+
+function showReturnPrompt(flowContainer, question, callback) {
+  const wrapper = document.createElement('div');
+  wrapper.className = 'return-prompt';
+  wrapper.innerHTML = `
+    <p class="prompt-text">${question}</p>
+    <textarea class="return-input" rows="4"></textarea>
+    <button class="seal-answer-btn hidden">Seal</button>
+  `;
+  flowContainer.appendChild(wrapper);
+  requestAnimationFrame(() => wrapper.classList.add('visible'));
+  scrollIntoView(wrapper);
+
+  const textarea = wrapper.querySelector('textarea');
+  const btn = wrapper.querySelector('button');
+
+  setTimeout(() => textarea.focus(), 100);
+
+  textarea.addEventListener('input', () => {
+    if (textarea.value.trim()) btn.classList.remove('hidden');
+    else btn.classList.add('hidden');
+  });
+
+  function submit() {
+    const val = textarea.value.trim();
+    if (!val) return;
+    wrapper.classList.remove('visible');
+    wrapper.style.opacity = '0';
+    setTimeout(() => {
+      wrapper.remove();
+      callback(val);
+    }, 800);
+  }
+
+  btn.addEventListener('click', submit);
+  textarea.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      if (textarea.value.trim()) submit();
+    }
+  });
+}
+
+// ── Due Capsule Check (on page load) ────────────────────────────
+
+function checkDueCapsules() {
+  const due = getDueCapsules();
+  if (due.length === 0) return;
+
+  const overlay = document.getElementById('due-overlay');
+  const flow = document.getElementById('due-flow');
+  overlay.classList.remove('hidden');
+
+  let index = 0;
+
+  function processNext() {
+    if (index >= due.length) {
+      overlay.classList.add('fading');
+      setTimeout(() => {
+        overlay.classList.add('hidden');
+        overlay.classList.remove('fading');
+      }, 1000);
+      return;
+    }
+
+    const capsule = due[index];
+    flow.innerHTML = '';
+
+    // Show temporal context
+    const meta = document.createElement('p');
+    meta.className = 'due-meta';
+    meta.textContent = `Sealed ${capsule.interval} ago`;
+    flow.appendChild(meta);
+    requestAnimationFrame(() => meta.classList.add('visible'));
+
+    setTimeout(() => {
+      runRevealSequence(flow, capsule, () => {
+        removeCapsules([capsule.id]);
+        index++;
+        if (index < due.length) {
+          flow.innerHTML = '';
+          processNext();
+        } else {
+          overlay.classList.add('fading');
+          setTimeout(() => {
+            overlay.classList.add('hidden');
+            overlay.classList.remove('fading');
+          }, 1000);
+        }
+      });
+    }, 1500);
+  }
+
+  processNext();
+}
+
 // Run on page load
 checkDueCapsules();
 updatePendingBadge();
 
-// ── Capsule Flow ────────────────────────────────────────────────
+// ── Capsule Flow (creation) ─────────────────────────────────────
 
 function initCapsuleFlow() {
+  const stepQuestions = document.getElementById('step-questions');
+  const sealedContainer = document.getElementById('sealed-answers');
+  const currentQuestion = document.getElementById('current-question');
+  const questionText = document.getElementById('question-text');
   const textarea = document.getElementById('response-input');
-  const continueBtn = document.getElementById('continue-btn');
-  const stepPrompt = document.getElementById('step-prompt');
+  const sealBtn = document.getElementById('seal-answer-btn');
   const stepInterval = document.getElementById('step-interval');
   const stepDelivery = document.getElementById('step-delivery');
   const stepConfirm = document.getElementById('step-confirm');
   const stepReveal = document.getElementById('step-reveal');
   const contactInput = document.getElementById('contact-input');
-  const sealBtn = document.getElementById('seal-btn');
+  const sealCapsuleBtn = document.getElementById('seal-btn');
   const sealError = document.getElementById('seal-error');
 
-  let belief = '';
+  let questionIndex = 0;
+  let answers = [];
   let selectedMethod = 'email';
 
-  function resetToPrompt() {
-    // Hide all steps, reset form, show prompt step
+  function showCurrentQuestion() {
+    questionText.textContent = QUESTIONS[questionIndex];
+    textarea.value = '';
+    sealBtn.classList.add('hidden');
+    currentQuestion.style.opacity = '0';
+    void currentQuestion.offsetHeight;
+    currentQuestion.style.opacity = '1';
+    setTimeout(() => textarea.focus(), 100);
+  }
+
+  function sealAnswer() {
+    const answer = textarea.value.trim();
+    if (!answer) return;
+    answers.push(answer);
+
+    // Create sealed entry with glow → dim animation
+    const entry = document.createElement('div');
+    entry.className = 'sealed-entry sealing';
+    entry.innerHTML = `
+      <p class="sealed-q">${escapeHtml(QUESTIONS[questionIndex])}</p>
+      <p class="sealed-a">\u201c${escapeHtml(answer)}\u201d</p>
+    `;
+    sealedContainer.appendChild(entry);
+    requestAnimationFrame(() => {
+      entry.classList.add('visible');
+      setTimeout(() => {
+        entry.classList.remove('sealing');
+        entry.classList.add('sealed');
+      }, 800);
+    });
+
+    questionIndex++;
+
+    if (questionIndex < QUESTIONS.length) {
+      currentQuestion.style.opacity = '0';
+      setTimeout(() => showCurrentQuestion(), 1000);
+    } else {
+      // All three sealed — move to interval picker
+      currentQuestion.classList.add('hidden');
+      setTimeout(() => {
+        transitionStep(stepQuestions, stepInterval);
+      }, 1200);
+    }
+  }
+
+  // Seal button
+  sealBtn.addEventListener('click', sealAnswer);
+
+  // Enter to seal
+  textarea.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      if (textarea.value.trim()) sealAnswer();
+    }
+  });
+
+  // Show seal button when typing
+  textarea.addEventListener('input', () => {
+    if (textarea.value.trim().length > 0) {
+      sealBtn.classList.remove('hidden');
+    } else {
+      sealBtn.classList.add('hidden');
+    }
+  });
+
+  // Start first question
+  showCurrentQuestion();
+
+  // Reset everything for a new cycle
+  function resetCreationFlow() {
+    questionIndex = 0;
+    answers = [];
+    sealedContainer.innerHTML = '';
+    currentQuestion.classList.remove('hidden');
+
     [stepInterval, stepDelivery, stepConfirm, stepReveal].forEach((s) => {
       s.classList.add('hidden');
       s.classList.remove('fading');
       s.style.opacity = '';
     });
-    textarea.value = '';
+    stepReveal.innerHTML = '';
+
     contactInput.value = '';
-    continueBtn.classList.add('hidden');
-    sealBtn.disabled = false;
-    sealBtn.textContent = 'Seal this belief';
+    sealCapsuleBtn.disabled = false;
+    sealCapsuleBtn.textContent = 'Seal these thoughts';
     sealError.classList.add('hidden');
-    belief = '';
     selectedMethod = 'email';
     document.querySelectorAll('.method-toggle button').forEach((b) => {
       b.classList.toggle('active', b.dataset.method === 'email');
@@ -491,41 +750,16 @@ function initCapsuleFlow() {
     contactInput.type = 'email';
     contactInput.placeholder = 'your@email.com';
 
-    stepPrompt.classList.remove('hidden');
-    stepPrompt.style.opacity = '0';
-    void stepPrompt.offsetHeight;
-    stepPrompt.style.opacity = '1';
-    textarea.focus();
+    stepQuestions.classList.remove('hidden');
+    stepQuestions.style.opacity = '0';
+    void stepQuestions.offsetHeight;
+    stepQuestions.style.opacity = '1';
+    showCurrentQuestion();
   }
 
-  // "Seal another" buttons
+  // "Begin again" buttons
   document.querySelectorAll('.again-btn').forEach((btn) => {
-    btn.addEventListener('click', resetToPrompt);
-  });
-
-  // Show continue button when user types
-  textarea.addEventListener('input', () => {
-    if (textarea.value.trim().length > 0) {
-      continueBtn.classList.remove('hidden');
-    } else {
-      continueBtn.classList.add('hidden');
-    }
-  });
-
-  // Continue: capture belief, show interval picker
-  function onContinue() {
-    belief = textarea.value.trim();
-    if (!belief) return;
-    transitionStep(stepPrompt, stepInterval);
-  }
-
-  continueBtn.addEventListener('click', onContinue);
-
-  textarea.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      if (textarea.value.trim()) onContinue();
-    }
+    btn.addEventListener('click', resetCreationFlow);
   });
 
   // Interval selection
@@ -535,13 +769,23 @@ function initCapsuleFlow() {
       const label = btn.dataset.label;
 
       if (seconds === 5) {
+        // 5-second reveal path
         transitionStep(stepInterval, null);
         setTimeout(() => {
-          stepReveal.querySelector('.reveal-text').textContent = belief;
+          stepReveal.innerHTML = '';
           stepReveal.classList.remove('hidden');
           stepReveal.style.opacity = '0';
           void stepReveal.offsetHeight;
           stepReveal.style.opacity = '1';
+          runRevealSequence(
+            stepReveal,
+            { answers: [...answers], id: 'quick' },
+            () => {
+              stepReveal.classList.add('hidden');
+              stepReveal.innerHTML = '';
+              resetCreationFlow();
+            }
+          );
         }, 5000);
       } else {
         stepDelivery.dataset.seconds = seconds;
@@ -570,8 +814,8 @@ function initCapsuleFlow() {
     });
   });
 
-  // Seal
-  sealBtn.addEventListener('click', async () => {
+  // Seal capsule
+  sealCapsuleBtn.addEventListener('click', async () => {
     const contact = contactInput.value.trim();
     sealError.classList.add('hidden');
 
@@ -594,12 +838,12 @@ function initCapsuleFlow() {
     const label = stepDelivery.dataset.label;
     const deliverAt = Date.now() + seconds * 1000;
 
-    sealBtn.disabled = true;
-    sealBtn.textContent = 'Sealing...';
+    sealCapsuleBtn.disabled = true;
+    sealCapsuleBtn.textContent = 'Sealing...';
 
     const capsule = {
       id: crypto.randomUUID(),
-      belief,
+      answers: [...answers],
       deliverAt,
       method: selectedMethod,
       contact,
@@ -609,29 +853,21 @@ function initCapsuleFlow() {
 
     let stored = false;
 
-    // Try server first, fall back to localStorage
     try {
       const res = await fetch('/api/capsules', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(capsule),
       });
-
-      if (res.ok) {
-        stored = true;
-      }
-    } catch {
-      // Network error — expected on local dev
-    }
+      if (res.ok) stored = true;
+    } catch {}
 
     if (!stored) {
-      // localStorage fallback
       storeCapsule(capsule);
-      stored = true;
     }
 
     stepConfirm.querySelector('.confirm-text').textContent =
-      `Your belief has been sealed. It will return to you in ${label}.`;
+      `Your thoughts have been sealed. They will return to you in ${label}.`;
     transitionStep(stepDelivery, stepConfirm);
     updatePendingBadge();
   });
@@ -639,27 +875,6 @@ function initCapsuleFlow() {
   function showError(msg) {
     sealError.textContent = msg;
     sealError.classList.remove('hidden');
-  }
-
-  function transitionStep(from, to) {
-    if (from) {
-      from.classList.add('fading');
-      setTimeout(() => {
-        from.classList.add('hidden');
-        from.classList.remove('fading');
-        if (to) {
-          to.classList.remove('hidden');
-          to.style.opacity = '0';
-          void to.offsetHeight;
-          to.style.opacity = '1';
-        }
-      }, 800);
-    } else if (to) {
-      to.classList.remove('hidden');
-      to.style.opacity = '0';
-      void to.offsetHeight;
-      to.style.opacity = '1';
-    }
   }
 }
 

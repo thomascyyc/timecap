@@ -8,15 +8,19 @@
 </head>
 <body>
   <div id="canvas-container"></div>
+
   <div id="prompt-overlay" class="hidden">
-    <!-- Step 1: Prompt + text entry -->
-    <div id="step-prompt" class="step">
-      <p class="prompt-text">What do you believe to be true right now that you're not entirely sure of?</p>
-      <textarea id="response-input" rows="4" placeholder=""></textarea>
-      <button id="continue-btn" class="continue-btn hidden">Continue</button>
+    <!-- Three-question sealed sequence -->
+    <div id="step-questions" class="step">
+      <div id="sealed-answers"></div>
+      <div id="current-question">
+        <p class="prompt-text" id="question-text"></p>
+        <textarea id="response-input" rows="4" placeholder=""></textarea>
+        <button id="seal-answer-btn" class="seal-answer-btn hidden">Seal</button>
+      </div>
     </div>
 
-    <!-- Step 2: Interval picker -->
+    <!-- Interval picker -->
     <div id="step-interval" class="step hidden">
       <p class="step-label">When should this return to you?</p>
       <div class="interval-buttons">
@@ -27,7 +31,7 @@
       </div>
     </div>
 
-    <!-- Step 3: Delivery form -->
+    <!-- Delivery form -->
     <div id="step-delivery" class="step hidden">
       <p class="step-label">Where should we send it?</p>
       <div class="method-toggle">
@@ -35,28 +39,23 @@
         <button data-method="sms">Text message</button>
       </div>
       <input type="email" id="contact-input" placeholder="your@email.com" autocomplete="email" />
-      <button id="seal-btn">Seal this belief</button>
+      <button id="seal-btn">Seal these thoughts</button>
       <p id="seal-error" class="error-text hidden"></p>
     </div>
 
-    <!-- Step 4: Confirmation -->
+    <!-- Confirmation -->
     <div id="step-confirm" class="step hidden">
       <p class="confirm-text"></p>
-      <button class="again-btn">Seal another</button>
+      <button class="again-btn">Begin again</button>
     </div>
 
-    <!-- 5-second reveal -->
-    <div id="step-reveal" class="step hidden">
-      <p class="reveal-label">You believed:</p>
-      <p class="reveal-text"></p>
-      <button class="again-btn">Seal another</button>
-    </div>
+    <!-- 5-second reveal sequence -->
+    <div id="step-reveal" class="step hidden"></div>
   </div>
 
-  <!-- Due capsule notification (shown on page load if any are ready) -->
+  <!-- Due capsule return overlay -->
   <div id="due-overlay" class="hidden">
-    <div id="due-capsules"></div>
-    <button id="due-dismiss">Continue</button>
+    <div id="due-flow"></div>
   </div>
 
   <script type="importmap">

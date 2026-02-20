@@ -35,6 +35,7 @@ body {
   align-items: center;
   justify-content: center;
   padding: 2rem;
+  overflow-y: auto;
   opacity: 0;
   pointer-events: none;
   transition: opacity 1.5s ease-in;
@@ -61,7 +62,8 @@ body {
   letter-spacing: 0.02em;
 }
 
-#response-input {
+#response-input,
+.return-input {
   background: transparent;
   border: none;
   border-bottom: 1px solid rgba(200, 184, 154, 0.3);
@@ -77,11 +79,13 @@ body {
   line-height: 1.6;
 }
 
-#response-input::placeholder {
+#response-input::placeholder,
+.return-input::placeholder {
   color: rgba(200, 184, 154, 0.3);
 }
 
-#response-input:focus {
+#response-input:focus,
+.return-input:focus {
   border-bottom-color: rgba(200, 184, 154, 0.5);
 }
 
@@ -115,9 +119,9 @@ body {
   line-height: 1.6;
 }
 
-/* ── Continue button ───────────────────────────────────────── */
+/* ── Seal answer button ───────────────────────────────────── */
 
-.continue-btn {
+.seal-answer-btn {
   margin-top: 1.5rem;
   background: transparent;
   border: 1px solid rgba(200, 184, 154, 0.25);
@@ -126,13 +130,80 @@ body {
   font-size: 0.95rem;
   padding: 0.6rem 2rem;
   cursor: pointer;
-  transition: border-color 0.3s, color 0.3s;
+  transition: border-color 0.3s, color 0.3s, opacity 0.5s;
   letter-spacing: 0.05em;
 }
 
-.continue-btn:hover {
+.seal-answer-btn:hover {
   border-color: rgba(200, 184, 154, 0.5);
   color: #e0d5c5;
+}
+
+.seal-answer-btn.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* ── Sealed answer entries (creation flow) ─────────────────── */
+
+#sealed-answers {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.sealed-entry {
+  text-align: center;
+  margin-bottom: 1.5rem;
+  width: 100%;
+  max-width: 480px;
+  opacity: 0;
+  transition: opacity 0.8s ease;
+}
+
+.sealed-entry.visible {
+  opacity: 1;
+}
+
+.sealed-q {
+  color: #504030;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  margin-bottom: 0.25rem;
+}
+
+.sealed-a {
+  font-family: 'Georgia', serif;
+  font-size: 0.95rem;
+  font-style: italic;
+  line-height: 1.6;
+  transition: color 1s ease, text-shadow 1s ease;
+}
+
+.sealed-entry.sealing .sealed-a {
+  color: #e0d5c5;
+  text-shadow: 0 0 20px rgba(100, 80, 180, 0.4);
+}
+
+.sealed-entry.sealed .sealed-a {
+  color: #706050;
+  text-shadow: none;
+}
+
+/* ── Current question (creation flow) ──────────────────────── */
+
+#current-question {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  transition: opacity 0.6s ease;
+}
+
+#current-question.hidden {
+  display: none;
 }
 
 /* ── Interval buttons ──────────────────────────────────────── */
@@ -266,27 +337,96 @@ body {
   line-height: 1.8;
 }
 
-/* ── 5-second reveal ───────────────────────────────────────── */
+/* ── Reveal entries (return flow) ──────────────────────────── */
+
+.reveal-entry {
+  text-align: center;
+  margin-bottom: 2rem;
+  width: 100%;
+  max-width: 480px;
+  opacity: 0;
+  transition: opacity 1.2s ease;
+}
+
+.reveal-entry.visible {
+  opacity: 1;
+}
 
 .reveal-label {
   color: #706050;
-  font-size: 0.85rem;
+  font-size: 0.8rem;
   text-transform: uppercase;
   letter-spacing: 0.15em;
-  margin-bottom: 1rem;
+  margin-bottom: 0.5rem;
 }
 
 .reveal-text {
   color: #e0d5c5;
   font-family: 'Georgia', serif;
-  font-size: clamp(1.1rem, 3vw, 1.5rem);
+  font-size: clamp(1.1rem, 3vw, 1.4rem);
   font-style: italic;
   text-align: center;
   line-height: 1.7;
   text-shadow: 0 0 20px rgba(100, 80, 180, 0.3);
 }
 
-/* ── Seal another button ───────────────────────────────────── */
+/* ── Return prompt (follow-up questions) ───────────────────── */
+
+.return-prompt {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  max-width: 480px;
+  opacity: 0;
+  transition: opacity 0.8s ease;
+}
+
+.return-prompt.visible {
+  opacity: 1;
+}
+
+/* ── Closing confirmation ──────────────────────────────────── */
+
+.closing-confirmation {
+  text-align: center;
+  max-width: 480px;
+  width: 100%;
+  opacity: 0;
+  transition: opacity 1.2s ease;
+}
+
+.closing-confirmation.visible {
+  opacity: 1;
+}
+
+.closing-text {
+  color: #c8b89a;
+  font-family: 'Georgia', serif;
+  font-size: clamp(1rem, 2.5vw, 1.3rem);
+  font-style: italic;
+  line-height: 1.8;
+  text-shadow: 0 0 12px rgba(100, 80, 180, 0.15);
+}
+
+/* ── Due meta label ────────────────────────────────────────── */
+
+.due-meta {
+  color: #504030;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  text-align: center;
+  margin-bottom: 2rem;
+  opacity: 0;
+  transition: opacity 1s ease;
+}
+
+.due-meta.visible {
+  opacity: 1;
+}
+
+/* ── Begin again / action buttons ──────────────────────────── */
 
 .again-btn {
   margin-top: 2.5rem;
@@ -306,7 +446,7 @@ body {
   color: #c8b89a;
 }
 
-/* ── Due capsule overlay ───────────────────────────────────── */
+/* ── Due capsule return overlay ────────────────────────────── */
 
 #due-overlay {
   position: fixed;
@@ -321,6 +461,7 @@ body {
   justify-content: center;
   padding: 2rem;
   background: #050508;
+  overflow-y: auto;
   opacity: 1;
   transition: opacity 1s ease;
 }
@@ -334,54 +475,12 @@ body {
   pointer-events: none;
 }
 
-#due-capsules {
+#due-flow {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   max-width: 480px;
   width: 100%;
-}
-
-.due-card {
-  margin-bottom: 2rem;
-  text-align: center;
-}
-
-.due-card .due-meta {
-  color: #706050;
-  font-size: 0.8rem;
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
-  margin-bottom: 0.75rem;
-}
-
-.due-card .due-belief {
-  color: #e0d5c5;
-  font-family: 'Georgia', serif;
-  font-size: clamp(1.1rem, 3vw, 1.4rem);
-  font-style: italic;
-  line-height: 1.7;
-  text-shadow: 0 0 20px rgba(100, 80, 180, 0.25);
-}
-
-.due-card .due-contact {
-  color: #504030;
-  font-size: 0.75rem;
-  margin-top: 0.5rem;
-}
-
-#due-dismiss {
-  margin-top: 1.5rem;
-  background: transparent;
-  border: 1px solid rgba(200, 184, 154, 0.2);
-  color: #c8b89a;
-  font-family: 'Georgia', serif;
-  font-size: 0.9rem;
-  padding: 0.6rem 2rem;
-  cursor: pointer;
-  transition: all 0.3s ease;
-}
-
-#due-dismiss:hover {
-  border-color: rgba(200, 184, 154, 0.5);
-  color: #e0d5c5;
 }
 
 /* ── Pending count badge ───────────────────────────────────── */

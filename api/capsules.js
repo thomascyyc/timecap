@@ -11,11 +11,20 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { belief, deliverAt, method, contact, interval } = req.body;
+  const { answers, deliverAt, method, contact, interval } = req.body;
 
-  // Validate
-  if (!belief || typeof belief !== 'string' || belief.trim().length === 0) {
-    return res.status(400).json({ error: 'Belief text is required' });
+  // Validate answers array
+  if (!Array.isArray(answers) || answers.length === 0 || answers.length > 3) {
+    return res.status(400).json({ error: 'Answers must be an array of 1-3 strings' });
+  }
+
+  for (const a of answers) {
+    if (typeof a !== 'string' || a.trim().length === 0) {
+      return res.status(400).json({ error: 'Each answer must be a non-empty string' });
+    }
+    if (a.length > 2000) {
+      return res.status(400).json({ error: 'Answer text too long (max 2000 characters each)' });
+    }
   }
 
   if (!deliverAt || typeof deliverAt !== 'number') {
@@ -42,15 +51,10 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'Interval label is required' });
   }
 
-  // Limit belief length
-  if (belief.length > 2000) {
-    return res.status(400).json({ error: 'Belief text too long (max 2000 characters)' });
-  }
-
   const id = randomUUID();
   const capsule = {
     id,
-    belief: belief.trim(),
+    answers: answers.map((a) => a.trim()),
     method,
     contact,
     deliverAt,
@@ -69,6 +73,6 @@ export default async function handler(req, res) {
     return res.status(200).json({ success: true, id });
   } catch (err) {
     console.error('Failed to store capsule:', err);
-    return res.status(500).json({ error: 'Failed to seal belief. Please try again.' });
+    return res.status(500).json({ error: 'Failed to seal thoughts. Please try again.' });
   }
 }
