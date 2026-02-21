@@ -1241,6 +1241,7 @@ function initCapsuleFlow() {
     };
 
     let stored = false;
+    let capsuleId = null;
 
     try {
       const res = await fetch('/api/capsules', {
@@ -1248,7 +1249,11 @@ function initCapsuleFlow() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(capsule),
       });
-      if (res.ok) stored = true;
+      if (res.ok) {
+        stored = true;
+        const data = await res.json();
+        capsuleId = data.id;
+      }
     } catch {}
 
     if (!stored) {
@@ -1259,6 +1264,19 @@ function initCapsuleFlow() {
       `Your thoughts have been sealed. They will return to you in ${label}.`;
     transitionStep(stepDelivery, stepConfirm);
     updatePendingBadge();
+
+    // For short intervals (5s), deliver immediately after a delay
+    if (seconds <= 5 && stored && capsuleId) {
+      setTimeout(async () => {
+        try {
+          await fetch('/api/deliver-now', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id: capsuleId }),
+          });
+        } catch {}
+      }, seconds * 1000);
+    }
   });
 
   function showError(msg) {
