@@ -4,5 +4,8 @@
       "path": "/api/deliver",
       "schedule": "0 8 * * *"
     }
+  ],
+  "rewrites": [
+    { "source": "/facilitator", "destination": "/facilitator.html" }
   ]
 }

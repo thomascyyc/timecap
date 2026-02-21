@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TimeCap — Facilitate</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="facilitator.css">
+</head>
+<body class="facilitator-body">
+
+  <div id="facilitator-app">
+
+    <!-- State 1: Create -->
+    <div id="state-create" class="f-state">
+      <p class="f-intro">You are about to open a room for collective reflection.</p>
+      <button id="btn-create" class="f-btn primary">Create a room</button>
+      <p id="create-error" class="error-text hidden"></p>
+    </div>
+
+    <!-- State 2: Waiting for participants -->
+    <div id="state-waiting" class="f-state hidden">
+      <p class="f-label">Room code</p>
+      <div class="room-code-display" id="room-code-display"></div>
+      <button id="btn-copy-link" class="f-btn ghost">Copy join link</button>
+      <p id="copy-confirm" class="f-copy-confirm hidden">Copied</p>
+
+      <div class="f-divider"></div>
+
+      <p id="sealed-count" class="f-count">Waiting for participants...</p>
+
+      <button id="btn-reveal" class="f-btn primary" disabled>Reveal</button>
+      <p class="f-reveal-hint">Available when at least one response is sealed</p>
+
+      <p id="reveal-error" class="error-text hidden"></p>
+    </div>
+
+    <!-- State 3: Revealed — themes view -->
+    <div id="state-revealed" class="f-state hidden">
+      <p class="f-label">Session revealed</p>
+      <div id="themes-loading" class="f-loading">
+        <span></span><span></span><span></span>
+      </div>
+
+      <div id="themes-content" class="hidden">
+
+        <div class="f-response-count" id="f-response-count"></div>
+
+        <!-- Sentiment bar -->
+        <div class="sentiment-section">
+          <p class="f-section-label">Overall sentiment</p>
+          <div class="sentiment-bar">
+            <div class="sentiment-seg positive" id="sent-positive"></div>
+            <div class="sentiment-seg neutral" id="sent-neutral"></div>
+            <div class="sentiment-seg negative" id="sent-negative"></div>
+          </div>
+          <div class="sentiment-legend">
+            <span class="legend-item positive" id="sent-positive-label"></span>
+            <span class="legend-item neutral" id="sent-neutral-label"></span>
+            <span class="legend-item negative" id="sent-negative-label"></span>
+          </div>
+        </div>
+
+        <!-- Three theme panels -->
+        <div class="theme-panels">
+          <div class="theme-panel">
+            <p class="theme-panel-question">What we believe</p>
+            <div class="theme-keywords" id="theme-q1"></div>
+          </div>
+          <div class="theme-panel">
+            <p class="theme-panel-question">What we're uncertain about</p>
+            <div class="theme-keywords" id="theme-q2"></div>
+          </div>
+          <div class="theme-panel">
+            <p class="theme-panel-question">What resolution looks like</p>
+            <div class="theme-keywords" id="theme-q3"></div>
+          </div>
+        </div>
+
+        <!-- Individual responses toggle -->
+        <button id="btn-toggle-responses" class="f-btn ghost small">View individual responses</button>
+        <div id="individual-responses" class="hidden"></div>
+
+      </div>
+    </div>
+
+  </div>
+
+  <script type="module" src="facilitator.js"></script>
+</body>
+</html>

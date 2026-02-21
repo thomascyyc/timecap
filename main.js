@@ -1,3 +1,133 @@
+// ── Mode & Session ───────────────────────────────────────────────
+
+const MODE_KEY = 'timecap_mode';       // 'individual' | 'workshop'
+const SESSION_KEY = 'timecap_session'; // { code, participantToken, name }
+
+function getMode() {
+  return sessionStorage.getItem(MODE_KEY) || null;
+}
+
+function setMode(mode) {
+  sessionStorage.setItem(MODE_KEY, mode);
+}
+
+function getWorkshopSession() {
+  try {
+    return JSON.parse(sessionStorage.getItem(SESSION_KEY) || 'null');
+  } catch { return null; }
+}
+
+function setWorkshopSession(session) {
+  sessionStorage.setItem(SESSION_KEY, JSON.stringify(session));
+}
+
+// ── Landing overlay ──────────────────────────────────────────────
+
+(function initLanding() {
+  const landingOverlay = document.getElementById('landing-overlay');
+  const landingChoices = document.getElementById('landing-choices');
+  const joinFlow = document.getElementById('join-flow');
+  const btnIndividual = document.getElementById('btn-individual');
+  const btnJoin = document.getElementById('btn-join');
+  const btnJoinSubmit = document.getElementById('btn-join-submit');
+  const btnJoinBack = document.getElementById('btn-join-back');
+  const roomCodeInput = document.getElementById('room-code-input');
+  const nameInput = document.getElementById('participant-name-input');
+  const joinError = document.getElementById('join-error');
+
+  function dismissLanding() {
+    landingOverlay.classList.add('dismissing');
+    setTimeout(() => landingOverlay.remove(), 700);
+  }
+
+  btnIndividual.addEventListener('click', () => {
+    setMode('individual');
+    dismissLanding();
+  });
+
+  btnJoin.addEventListener('click', () => {
+    landingChoices.classList.add('hidden');
+    joinFlow.classList.remove('hidden');
+    setTimeout(() => roomCodeInput.focus(), 100);
+  });
+
+  btnJoinBack.addEventListener('click', () => {
+    joinFlow.classList.add('hidden');
+    landingChoices.classList.remove('hidden');
+    joinError.classList.add('hidden');
+    roomCodeInput.value = '';
+    nameInput.value = '';
+  });
+
+  roomCodeInput.addEventListener('input', () => {
+    roomCodeInput.value = roomCodeInput.value.toUpperCase().replace(/[^A-Z]/g, '');
+  });
+
+  async function attemptJoin() {
+    const code = roomCodeInput.value.trim().toUpperCase();
+    const name = nameInput.value.trim();
+
+    if (code.length !== 6) {
+      showJoinError('Please enter a 6-character room code.');
+      return;
+    }
+
+    joinError.classList.add('hidden');
+    btnJoinSubmit.disabled = true;
+    btnJoinSubmit.textContent = 'Joining...';
+
+    try {
+      const res = await fetch(`/api/session-status?code=${encodeURIComponent(code)}`);
+      if (res.status === 404) {
+        showJoinError('Room not found. Check your code and try again.');
+        return;
+      }
+      if (!res.ok) {
+        showJoinError('Something went wrong. Please try again.');
+        return;
+      }
+      const data = await res.json();
+      if (data.status !== 'open') {
+        showJoinError('This session is no longer accepting participants.');
+        return;
+      }
+
+      const participantToken = crypto.randomUUID
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+      setMode('workshop');
+      setWorkshopSession({ code, participantToken, name });
+      dismissLanding();
+    } catch {
+      showJoinError('Connection error. Please try again.');
+    } finally {
+      btnJoinSubmit.disabled = false;
+      btnJoinSubmit.textContent = 'Enter room';
+    }
+  }
+
+  function showJoinError(msg) {
+    joinError.textContent = msg;
+    joinError.classList.remove('hidden');
+  }
+
+  btnJoinSubmit.addEventListener('click', attemptJoin);
+  roomCodeInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') attemptJoin();
+  });
+
+  // Pre-fill code from ?join=CODE query param (facilitator share link)
+  const urlParams = new URLSearchParams(location.search);
+  const joinCode = urlParams.get('join');
+  if (joinCode) {
+    landingChoices.classList.add('hidden');
+    joinFlow.classList.remove('hidden');
+    roomCodeInput.value = joinCode.toUpperCase().slice(0, 6);
+    setTimeout(() => nameInput.focus(), 100);
+  }
+})();
+
 import * as THREE from 'three';
 import { ConvexGeometry } from 'three/addons/geometries/ConvexGeometry.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
@@ -1046,6 +1176,75 @@ function checkDueCapsules() {
 checkDueCapsules();
 updatePendingBadge();
 
+// ── Workshop Seal & Waiting Screen ──────────────────────────────
+
+async function sealWorkshopResponse(answers) {
+  const session = getWorkshopSession();
+  const overlay = document.getElementById('prompt-overlay');
+  const stepWaiting = document.getElementById('step-waiting');
+
+  // Show waiting screen immediately
+  overlay.classList.remove('hidden');
+  void overlay.offsetHeight;
+  overlay.classList.add('visible');
+  stepWaiting.classList.remove('hidden');
+
+  try {
+    await fetch('/api/workshop-seal', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        code: session.code,
+        participantToken: session.participantToken,
+        name: session.name,
+        answers,
+      }),
+    });
+  } catch {
+    // Best-effort — waiting screen still shows even if network fails
+  }
+
+  // Poll for facilitator reveal
+  startWaitingPoll(session.code);
+}
+
+function startWaitingPoll(code) {
+  const waitingRevealed = document.getElementById('waiting-revealed');
+  const waitingDots = document.getElementById('waiting-dots');
+
+  let pollCount = 0;
+  const MAX_POLLS = 600; // ~30 minutes at 3s intervals
+
+  const interval = setInterval(async () => {
+    pollCount++;
+    if (pollCount > MAX_POLLS) {
+      clearInterval(interval);
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/session-status?code=${encodeURIComponent(code)}`);
+      if (!res.ok) return;
+      const data = await res.json();
+
+      if (data.status === 'revealed') {
+        clearInterval(interval);
+        waitingDots.style.opacity = '0';
+        setTimeout(() => {
+          waitingDots.style.display = 'none';
+          waitingRevealed.classList.remove('hidden');
+          void waitingRevealed.offsetHeight;
+          waitingRevealed.style.opacity = '0';
+          waitingRevealed.style.transition = 'opacity 1.5s ease';
+          requestAnimationFrame(() => { waitingRevealed.style.opacity = '1'; });
+        }, 400);
+      }
+    } catch {
+      // Ignore polling errors
+    }
+  }, 3000);
+}
+
 // ── Capsule Flow (creation) ─────────────────────────────────────
 
 function initCapsuleFlow() {
@@ -1104,10 +1303,17 @@ function initCapsuleFlow() {
       currentQuestion.style.opacity = '0';
       setTimeout(() => showCurrentQuestion(), 1000);
     } else {
-      // All three sealed — move to interval picker
+      // All three sealed
       currentQuestion.classList.add('hidden');
       setTimeout(() => {
-        transitionStep(stepQuestions, stepInterval);
+        if (getMode() === 'workshop') {
+          // Workshop mode: seal to server, show waiting screen
+          transitionStep(stepQuestions, null);
+          sealWorkshopResponse(answers);
+        } else {
+          // Individual mode: move to interval picker
+          transitionStep(stepQuestions, stepInterval);
+        }
       }, 1200);
     }
   }

@@ -9,6 +9,30 @@
 <body>
   <div id="canvas-container"></div>
 
+  <!-- Landing / mode-select overlay -->
+  <div id="landing-overlay">
+    <div id="landing-content">
+      <div id="landing-choices">
+        <button id="btn-individual" class="landing-btn primary">Reflect alone</button>
+        <button id="btn-join" class="landing-btn">Join a session</button>
+      </div>
+
+      <!-- Join flow (hidden until "Join a session" is clicked) -->
+      <div id="join-flow" class="hidden">
+        <p class="landing-label">Enter your room code</p>
+        <input id="room-code-input" type="text" maxlength="6" placeholder="XXXXXX" autocomplete="off" spellcheck="false" />
+        <input id="participant-name-input" type="text" maxlength="50" placeholder="Your name (optional)" autocomplete="off" />
+        <p id="join-error" class="error-text hidden"></p>
+        <div class="join-actions">
+          <button id="btn-join-submit" class="landing-btn primary">Enter room</button>
+          <button id="btn-join-back" class="landing-btn ghost">Back</button>
+        </div>
+      </div>
+
+      <a href="/facilitator" class="facilitate-link">Facilitate &rarr;</a>
+    </div>
+  </div>
+
   <div id="prompt-overlay" class="hidden">
     <!-- Three-question sealed sequence -->
     <div id="step-questions" class="step">
@@ -43,7 +67,7 @@
       <p id="seal-error" class="error-text hidden"></p>
     </div>
 
-    <!-- Confirmation -->
+    <!-- Confirmation (individual mode) -->
     <div id="step-confirm" class="step hidden">
       <p class="confirm-text"></p>
       <button class="again-btn">Begin again</button>
@@ -51,6 +75,14 @@
 
     <!-- 5-second reveal sequence -->
     <div id="step-reveal" class="step hidden"></div>
+
+    <!-- Workshop waiting screen -->
+    <div id="step-waiting" class="step hidden">
+      <p class="waiting-text">Your response has been sealed.</p>
+      <p class="waiting-sub">Your facilitator will guide the next step.</p>
+      <div id="waiting-dots" aria-hidden="true"><span></span><span></span><span></span></div>
+      <p id="waiting-revealed" class="hidden waiting-revealed-text">Your facilitator is leading the conversation now.</p>
+    </div>
   </div>
 
   <!-- Due capsule return overlay -->
