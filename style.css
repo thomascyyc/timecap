@@ -62,8 +62,7 @@ body {
   letter-spacing: 0.02em;
 }
 
-#response-input,
-.return-input {
+#response-input {
   background: transparent;
   border: none;
   border-bottom: 1px solid rgba(200, 184, 154, 0.3);
@@ -79,13 +78,11 @@ body {
   line-height: 1.6;
 }
 
-#response-input::placeholder,
-.return-input::placeholder {
+#response-input::placeholder {
   color: rgba(200, 184, 154, 0.3);
 }
 
-#response-input:focus,
-.return-input:focus {
+#response-input:focus {
   border-bottom-color: rgba(200, 184, 154, 0.5);
 }
 
@@ -337,95 +334,6 @@ body {
   line-height: 1.8;
 }
 
-/* ── Reveal entries (return flow) ──────────────────────────── */
-
-.reveal-entry {
-  text-align: center;
-  margin-bottom: 2rem;
-  width: 100%;
-  max-width: 480px;
-  opacity: 0;
-  transition: opacity 1.2s ease;
-}
-
-.reveal-entry.visible {
-  opacity: 1;
-}
-
-.reveal-label {
-  color: #706050;
-  font-size: 0.8rem;
-  text-transform: uppercase;
-  letter-spacing: 0.15em;
-  margin-bottom: 0.5rem;
-}
-
-.reveal-text {
-  color: #e0d5c5;
-  font-family: 'Georgia', serif;
-  font-size: clamp(1.1rem, 3vw, 1.4rem);
-  font-style: italic;
-  text-align: center;
-  line-height: 1.7;
-  text-shadow: 0 0 20px rgba(100, 80, 180, 0.3);
-}
-
-/* ── Return prompt (follow-up questions) ───────────────────── */
-
-.return-prompt {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  width: 100%;
-  max-width: 480px;
-  opacity: 0;
-  transition: opacity 0.8s ease;
-}
-
-.return-prompt.visible {
-  opacity: 1;
-}
-
-/* ── Closing confirmation ──────────────────────────────────── */
-
-.closing-confirmation {
-  text-align: center;
-  max-width: 480px;
-  width: 100%;
-  opacity: 0;
-  transition: opacity 1.2s ease;
-}
-
-.closing-confirmation.visible {
-  opacity: 1;
-}
-
-.closing-text {
-  color: #c8b89a;
-  font-family: 'Georgia', serif;
-  font-size: clamp(1rem, 2.5vw, 1.3rem);
-  font-style: italic;
-  line-height: 1.8;
-  text-shadow: 0 0 12px rgba(100, 80, 180, 0.15);
-}
-
-/* ── Due meta label ────────────────────────────────────────── */
-
-.due-meta {
-  color: #504030;
-  font-size: 0.75rem;
-  text-transform: uppercase;
-  letter-spacing: 0.15em;
-  text-align: center;
-  margin-bottom: 2rem;
-  opacity: 0;
-  transition: opacity 1s ease;
-}
-
-.due-meta.visible {
-  opacity: 1;
-}
-
 /* ── Begin again / action buttons ──────────────────────────── */
 
 .again-btn {
@@ -443,62 +351,6 @@ body {
 
 .again-btn:hover {
   border-color: rgba(200, 184, 154, 0.4);
-  color: #c8b89a;
-}
-
-/* ── Due capsule return overlay ────────────────────────────── */
-
-#due-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  z-index: 20;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 2rem;
-  background: #050508;
-  overflow-y: auto;
-  opacity: 1;
-  transition: opacity 1s ease;
-}
-
-#due-overlay.hidden {
-  display: none;
-}
-
-#due-overlay.fading {
-  opacity: 0;
-  pointer-events: none;
-}
-
-#due-flow {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  max-width: 480px;
-  width: 100%;
-}
-
-/* ── Pending count badge ───────────────────────────────────── */
-
-#pending-badge {
-  position: fixed;
-  bottom: 1.5rem;
-  right: 1.5rem;
-  z-index: 15;
-  color: #706050;
-  font-family: 'Georgia', serif;
-  font-size: 0.75rem;
-  letter-spacing: 0.05em;
-  cursor: pointer;
-  transition: color 0.3s;
-}
-
-#pending-badge:hover {
   color: #c8b89a;
 }
 

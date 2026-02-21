@@ -170,12 +170,6 @@ const QUESTIONS = [
   'What would have to happen for that uncertainty to resolve?',
 ];
 
-const REVEAL_LABELS = [
-  'You believed',
-  'You were uncertain about',
-  'For it to resolve, you needed',
-];
-
 // ── Scene Setup ─────────────────────────────────────────────────
 
 const container = document.getElementById('canvas-container');
@@ -933,51 +927,6 @@ function escapeHtml(str) {
   return d.innerHTML;
 }
 
-function scrollIntoView(el) {
-  setTimeout(() => el.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 100);
-}
-
-// ── localStorage Capsule Store ──────────────────────────────────
-
-const STORAGE_KEY = 'timecap_capsules';
-
-function getStoredCapsules() {
-  try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
-  } catch { return []; }
-}
-
-function storeCapsule(capsule) {
-  const list = getStoredCapsules();
-  list.push(capsule);
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
-}
-
-function removeCapsules(ids) {
-  const list = getStoredCapsules().filter((c) => !ids.includes(c.id));
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
-}
-
-function getDueCapsules() {
-  const now = Date.now();
-  return getStoredCapsules().filter((c) => c.deliverAt <= now);
-}
-
-function updatePendingBadge() {
-  const pending = getStoredCapsules().filter((c) => c.deliverAt > Date.now());
-  let badge = document.getElementById('pending-badge');
-  if (pending.length === 0) {
-    if (badge) badge.remove();
-    return;
-  }
-  if (!badge) {
-    badge = document.createElement('div');
-    badge.id = 'pending-badge';
-    document.body.appendChild(badge);
-  }
-  badge.textContent = `${pending.length} sealed`;
-}
-
 // ── Step Transitions ────────────────────────────────────────────
 
 function transitionStep(from, to) {
@@ -1000,181 +949,6 @@ function transitionStep(from, to) {
     to.style.opacity = '1';
   }
 }
-
-// ── Reveal Sequence (shared between 5s reveal & due return) ─────
-
-function runRevealSequence(flowContainer, capsuleData, onComplete) {
-  const answers = capsuleData.answers || (capsuleData.belief ? [capsuleData.belief] : []);
-  const labels = answers.length === 1 && capsuleData.belief
-    ? ['You believed']
-    : REVEAL_LABELS.slice(0, answers.length);
-
-  let step = 0;
-
-  function revealNext() {
-    if (step < answers.length) {
-      const entry = document.createElement('div');
-      entry.className = 'reveal-entry';
-      entry.innerHTML = `
-        <p class="reveal-label">${labels[step]}</p>
-        <p class="reveal-text">\u201c${escapeHtml(answers[step])}\u201d</p>
-      `;
-      flowContainer.appendChild(entry);
-      requestAnimationFrame(() => entry.classList.add('visible'));
-      scrollIntoView(entry);
-      step++;
-      setTimeout(revealNext, 2500);
-    } else {
-      // All answers revealed — ask "What actually happened?"
-      setTimeout(() => {
-        showReturnPrompt(flowContainer, 'What actually happened?', (response) => {
-          // Seal the response visually
-          const sealed = document.createElement('div');
-          sealed.className = 'sealed-entry';
-          sealed.innerHTML = `
-            <p class="sealed-q">What actually happened</p>
-            <p class="sealed-a">\u201c${escapeHtml(response)}\u201d</p>
-          `;
-          flowContainer.appendChild(sealed);
-          requestAnimationFrame(() => sealed.classList.add('visible'));
-
-          // Store as seed for next cycle
-          try {
-            localStorage.setItem('timecap_seed', JSON.stringify({
-              text: response,
-              capsuleId: capsuleData.id,
-              timestamp: Date.now(),
-            }));
-          } catch {}
-
-          // Brief pause, then final prompt
-          setTimeout(() => {
-            showReturnPrompt(flowContainer, 'What did this surface that you weren\u2019t expecting?', (finalResponse) => {
-              // Clear and show closing confirmation
-              flowContainer.innerHTML = '';
-              const closing = document.createElement('div');
-              closing.className = 'closing-confirmation';
-              closing.innerHTML = `<p class="closing-text">\u201c${escapeHtml(finalResponse)}\u201d</p>`;
-              flowContainer.appendChild(closing);
-              requestAnimationFrame(() => closing.classList.add('visible'));
-
-              if (onComplete) {
-                const btn = document.createElement('button');
-                btn.className = 'again-btn';
-                btn.textContent = 'Begin again';
-                btn.style.opacity = '0';
-                flowContainer.appendChild(btn);
-                setTimeout(() => { btn.style.opacity = '1'; }, 800);
-                btn.addEventListener('click', onComplete);
-              }
-            });
-          }, 1500);
-        });
-      }, 1000);
-    }
-  }
-
-  revealNext();
-}
-
-function showReturnPrompt(flowContainer, question, callback) {
-  const wrapper = document.createElement('div');
-  wrapper.className = 'return-prompt';
-  wrapper.innerHTML = `
-    <p class="prompt-text">${question}</p>
-    <textarea class="return-input" rows="4"></textarea>
-    <button class="seal-answer-btn hidden">Seal</button>
-  `;
-  flowContainer.appendChild(wrapper);
-  requestAnimationFrame(() => wrapper.classList.add('visible'));
-  scrollIntoView(wrapper);
-
-  const textarea = wrapper.querySelector('textarea');
-  const btn = wrapper.querySelector('button');
-
-  setTimeout(() => textarea.focus(), 100);
-
-  textarea.addEventListener('input', () => {
-    if (textarea.value.trim()) btn.classList.remove('hidden');
-    else btn.classList.add('hidden');
-  });
-
-  function submit() {
-    const val = textarea.value.trim();
-    if (!val) return;
-    wrapper.classList.remove('visible');
-    wrapper.style.opacity = '0';
-    setTimeout(() => {
-      wrapper.remove();
-      callback(val);
-    }, 800);
-  }
-
-  btn.addEventListener('click', submit);
-  textarea.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      if (textarea.value.trim()) submit();
-    }
-  });
-}
-
-// ── Due Capsule Check (on page load) ────────────────────────────
-
-function checkDueCapsules() {
-  const due = getDueCapsules();
-  if (due.length === 0) return;
-
-  const overlay = document.getElementById('due-overlay');
-  const flow = document.getElementById('due-flow');
-  overlay.classList.remove('hidden');
-
-  let index = 0;
-
-  function processNext() {
-    if (index >= due.length) {
-      overlay.classList.add('fading');
-      setTimeout(() => {
-        overlay.classList.add('hidden');
-        overlay.classList.remove('fading');
-      }, 1000);
-      return;
-    }
-
-    const capsule = due[index];
-    flow.innerHTML = '';
-
-    // Show temporal context
-    const meta = document.createElement('p');
-    meta.className = 'due-meta';
-    meta.textContent = `Sealed ${capsule.interval} ago`;
-    flow.appendChild(meta);
-    requestAnimationFrame(() => meta.classList.add('visible'));
-
-    setTimeout(() => {
-      runRevealSequence(flow, capsule, () => {
-        removeCapsules([capsule.id]);
-        index++;
-        if (index < due.length) {
-          flow.innerHTML = '';
-          processNext();
-        } else {
-          overlay.classList.add('fading');
-          setTimeout(() => {
-            overlay.classList.add('hidden');
-            overlay.classList.remove('fading');
-          }, 1000);
-        }
-      });
-    }, 1500);
-  }
-
-  processNext();
-}
-
-// Run on page load
-checkDueCapsules();
-updatePendingBadge();
 
 // ── Workshop Seal & Waiting Screen ──────────────────────────────
 
@@ -1257,7 +1031,6 @@ function initCapsuleFlow() {
   const stepInterval = document.getElementById('step-interval');
   const stepDelivery = document.getElementById('step-delivery');
   const stepConfirm = document.getElementById('step-confirm');
-  const stepReveal = document.getElementById('step-reveal');
   const contactInput = document.getElementById('contact-input');
   const sealCapsuleBtn = document.getElementById('seal-btn');
   const sealError = document.getElementById('seal-error');
@@ -1348,12 +1121,11 @@ function initCapsuleFlow() {
     sealedContainer.innerHTML = '';
     currentQuestion.classList.remove('hidden');
 
-    [stepInterval, stepDelivery, stepConfirm, stepReveal].forEach((s) => {
+    [stepInterval, stepDelivery, stepConfirm].forEach((s) => {
       s.classList.add('hidden');
       s.classList.remove('fading');
       s.style.opacity = '';
     });
-    stepReveal.innerHTML = '';
 
     contactInput.value = '';
     sealCapsuleBtn.disabled = false;
@@ -1446,7 +1218,6 @@ function initCapsuleFlow() {
       createdAt: Date.now(),
     };
 
-    let stored = false;
     let capsuleId = null;
 
     try {
@@ -1456,23 +1227,17 @@ function initCapsuleFlow() {
         body: JSON.stringify(capsule),
       });
       if (res.ok) {
-        stored = true;
         const data = await res.json();
         capsuleId = data.id;
       }
     } catch {}
 
-    if (!stored) {
-      storeCapsule(capsule);
-    }
-
     stepConfirm.querySelector('.confirm-text').textContent =
       `Your thoughts have been sealed. They will return to you in ${label}.`;
     transitionStep(stepDelivery, stepConfirm);
-    updatePendingBadge();
 
     // For short intervals (5s), deliver immediately after a delay
-    if (seconds <= 5 && stored && capsuleId) {
+    if (seconds <= 5 && capsuleId) {
       setTimeout(async () => {
         try {
           await fetch('/api/deliver-now', {

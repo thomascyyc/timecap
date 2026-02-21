@@ -57,7 +57,7 @@
 
     <!-- Delivery form -->
     <div id="step-delivery" class="step hidden">
-      <p class="step-label">Where should we send it?</p>
+      <p class="step-label">Your return address for this capsule</p>
       <div class="method-toggle">
         <button data-method="email" class="active">Email</button>
         <button data-method="sms">Text message</button>
@@ -73,9 +73,6 @@
       <button class="again-btn">Begin again</button>
     </div>
 
-    <!-- 5-second reveal sequence -->
-    <div id="step-reveal" class="step hidden"></div>
-
     <!-- Workshop waiting screen -->
     <div id="step-waiting" class="step hidden">
       <p class="waiting-text">Your response has been sealed.</p>
@@ -83,11 +80,6 @@
       <div id="waiting-dots" aria-hidden="true"><span></span><span></span><span></span></div>
       <p id="waiting-revealed" class="hidden waiting-revealed-text">Your facilitator is leading the conversation now.</p>
     </div>
-  </div>
-
-  <!-- Due capsule return overlay -->
-  <div id="due-overlay" class="hidden">
-    <div id="due-flow"></div>
   </div>
 
   <script type="importmap">
