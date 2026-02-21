@@ -37,7 +37,10 @@ function setWorkshopSession(session) {
 
   function dismissLanding() {
     landingOverlay.classList.add('dismissing');
-    setTimeout(() => landingOverlay.remove(), 700);
+    setTimeout(() => {
+      landingOverlay.remove();
+      showPrompt();
+    }, 700);
   }
 
   btnIndividual.addEventListener('click', () => {
@@ -905,11 +908,21 @@ function updateFracture(time) {
     }
     fracturePieces.length = 0;
     innerLight.intensity = 0;
-    showPrompt();
+    showModeSelect();
   }
 }
 
-// ── Prompt Reveal ───────────────────────────────────────────────
+// ── Mode Select (after fracture) ────────────────────────────────
+
+function showModeSelect() {
+  const landing = document.getElementById('landing-overlay');
+  if (landing) {
+    landing.classList.remove('hidden');
+  } else {
+    // Landing was already dismissed (e.g. ?join= deep link)
+    showPrompt();
+  }
+}
 
 function showPrompt() {
   const overlay = document.getElementById('prompt-overlay');
